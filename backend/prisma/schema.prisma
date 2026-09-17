@@ -1,0 +1,79 @@
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A person known to the API, provisioned on their first authenticated request.
+/// Identity is the Auth0 `sub`; email is informational and only trusted for sharing when verified.
+model User {
+  id            String   @id @default(uuid(4)) @db.Uuid
+  auth0Sub      String   @unique
+  email         String?
+  emailVerified Boolean  @default(false)
+  name          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  collections Collection[]
+  bookmarks   Bookmark[]
+
+  @@index([email])
+}
+
+model Collection {
+  id        String   @id @default(uuid(4)) @db.Uuid
+  name      String   @db.VarChar(200)
+  ownerId   String   @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner     User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  bookmarks Bookmark[]
+  shares    CollectionShare[]
+
+  /// Target of Bookmark's composite FK: guarantees a bookmark can only point at its own owner's collection.
+  @@unique([id, ownerId])
+  @@index([ownerId, createdAt])
+}
+
+model Bookmark {
+  id           String   @id @default(uuid(4)) @db.Uuid
+  url          String   @db.VarChar(2048)
+  title        String   @db.VarChar(500)
+  notes        String?  @db.VarChar(10000)
+  collectionId String?  @db.Uuid
+  ownerId      String   @db.Uuid
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  owner      User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  /// Composite FK (collectionId, ownerId) -> Collection(id, ownerId). NULL collectionId = uncategorised
+  /// (Postgres MATCH SIMPLE skips the check). Cascade per DECISIONS.md ADR-005.
+  collection Collection? @relation(fields: [collectionId, ownerId], references: [id, ownerId], onDelete: Cascade)
+
+  @@index([ownerId, createdAt])
+  @@index([ownerId, collectionId])
+}
+
+/// Read-only grant of one collection to a person identified by email (DECISIONS.md ADR-006).
+/// Matches only an authenticated user whose verified email equals granteeEmail. May be pending.
+model CollectionShare {
+  id           String   @id @default(uuid(4)) @db.Uuid
+  collectionId String   @db.Uuid
+  /// Stored lower-cased and trimmed.
+  granteeEmail String   @db.VarChar(320)
+  createdAt    DateTime @default(now())
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, granteeEmail])
+  @@index([granteeEmail])
+}
