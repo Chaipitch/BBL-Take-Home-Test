@@ -31,6 +31,7 @@ Short ADRs for calls the brief left open.
 | 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
 | 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | Accepted — contract in `API_DESIGN.md` | Developer (agent recommendations; 012g follow the brief; `?q=` on title) |
 | 013 | Collections implementation design + shared API plumbing (BBL-13) | Accepted — implemented | Developer (all agent recommendations, incl. wider delete race and 413) |
+| 014 | Bookmarks implementation design (BBL-14) | **Proposed** — awaiting developer | — |
 
 ---
 
@@ -463,3 +464,53 @@ Contract lists it as not yet implemented.
 - **404 body text is fixed**, not the exception message: `ParseUUIDPipe` says "uuid is expected", which would make a malformed id distinguishable from a not-yours id. Test compares the three 404 bodies for equality.
 - **Mutation checks:** removing `ownerId` from `get()`, `update()`, `list()`; skipping the confirm check; removing LIKE escaping; bare `@Body()` on POST (guardrail test fails) — each makes tests fail. **Not caught: removing `ownerId` from the bookmark query inside `listBookmarks()`** — an equivalent mutant: the method first 404s on a collection that isn't the caller's, and the composite FK guarantees every bookmark in the caller's collection has the caller as owner. Kept as a redundant third layer; documented rather than tested with a contrived test.
 - **Content-Type** of errors is `application/problem+json`; `Location` exposed via CORS for the SPA.
+
+## ADR-014 — Implementation design for `/bookmarks` (BBL-14)
+**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Already decided (inputs).** Contract in `API_DESIGN.md` §3–§6 (ADR-012): fields per the brief; PUT omits → `notes`/`collectionId` null; PATCH partial, `null` clears; http/https URLs only; empty notes → null; `collectionId` not the caller's → `400` field error; `?collectionId=<uuid|none>`, `?q=` on title; not-yours filter → empty list. ADR-005a: app check **and** composite FK. ADR-013: explicit `ownerId` on every query, Problem Details, `@ValidBody`/`@ValidQuery`/`@IdParam`, `containsText`, contract-field `select`, cursor pagination — all reused as-is.
+
+### Facts checked before proposing (2026-09-17)
+1. **Plain `z.url()` accepts `javascript:alert(1)`, `data:text/html,…`, `file:///etc/passwd`, `ftp://…` and `http:example.com`.** `z.url({ protocol: /^https?$/ })` rejects all of them and still accepts `localhost`, IP addresses, IDN hosts, uppercase schemes and `user:pass@` URLs. Adding zod's domain regex would wrongly reject `http://localhost:3000`, `http://127.0.0.1` and `https://例子.测试`. `z.url()` also trims surrounding whitespace.
+2. `Bookmark` has **no** compound unique on `(id, ownerId)` (only `Collection` does), but Prisma's `BookmarkWhereUniqueInput` accepts `id` together with extra filters such as `ownerId`.
+
+### 014a — Module layout
+`src/bookmarks/` (`bookmarks.schemas.ts`, `bookmarks.service.ts`, `bookmarks.controller.ts`, `bookmarks.module.ts`). Move `bookmarkSelect` / `BookmarkDto` out of `collections.service.ts` into `src/bookmarks/bookmark.select.ts` so both modules share one definition of the bookmark response.
+**Recommendation:** yes.
+
+### 014b — Single-row owner scoping for bookmarks
+| Option | Notes |
+|---|---|
+| **A. `where: { id, ownerId }` in `findUnique` / `update` / `delete`** | Prisma's extended unique where; not found or not yours → `null` / `P2025` → 404, same as collections. No migration. The `ownerId` condition must be proven present by a mutation check (it's easy to drop silently). |
+| B. Add `@@unique([id, ownerId])` to `Bookmark` and use `id_ownerId` like collections | Identical call shape to collections; costs a migration and a redundant index (`id` is already the primary key). |
+**Recommendation: A.**
+
+### 014c — Checking `collectionId` on POST / PUT / PATCH (ADR-005a, 012k)
+When the body sets a non-null `collectionId`:
+1. **App check:** `collection.findUnique({ where: { id_ownerId: { id: collectionId, ownerId } } })`; missing → `400` with `errors: [{ field: "collectionId", message: "collection not found" }]` — identical for "doesn't exist" and "someone else's".
+2. **Write**, with the composite FK as backstop. If the collection is deleted between check and write, Postgres raises a foreign-key violation (Prisma `P2003`).
+
+| Option for the `P2003` race | Notes |
+|---|---|
+| **A. Map `P2003` on the bookmark's collection FK to the same `400 collectionId` error** | Client sees the same answer as if the check had failed. Unit-tested with a stubbed Prisma error (the race can't be produced deterministically end to end). |
+| B. Let it surface as `500` | Simpler, but a normal (if rare) user race looks like a server bug. |
+**Recommendation: A.** Also: `PATCH` that doesn't touch `collectionId` skips the check.
+**Note for the mutation check:** removing the app check alone will likely *not* fail e2e tests if A is implemented, because the FK then raises `P2003`, which maps to the same `400` — defense in depth makes that mutant equivalent from the API's view. The check stays for clear intent and to avoid relying on constraint errors; this will be documented honestly.
+
+### 014d — URL validation (fact 1)
+| Option | Notes |
+|---|---|
+| **A. `z.url({ protocol: /^https?$/ })`, max 2048, stored as given (after trim)** | Blocks script/data/file schemes; allows localhost/IP/IDN. |
+| B. A + zod domain regex | Rejects valid `localhost`, IP and IDN URLs. |
+| C. Plain `z.url()` | ❌ Accepts `javascript:` → stored XSS when the UI renders the link. |
+**Recommendation: A.**
+**Question — credentials in URLs** (`https://user:pass@host`): **A. allow (recommended)** — it's the owner's own private data and the contract says "stored as given"; B. reject with 400 to avoid storing secrets in plain text.
+
+### 014e — Tests planned (e2e, real DB, users A and B; unit where noted)
+- CRUD happy paths with exact contract keys, `Location`, trimming, `notes` whitespace → `null`.
+- **Cross-user:** GET/PUT/PATCH/DELETE on B's bookmark → 404 identical to random and malformed ids, B's row verified untouched; list never contains B's rows.
+- **Collection assignment:** POST/PUT/PATCH with B's `collectionId` → 400 identical to a random UUID (and nothing written); own collection → OK; move between own collections; PATCH `collectionId: null` uncategorises; PUT without `collectionId` uncategorises; malformed `collectionId` in body → 400.
+- **P2003 mapping:** unit test with a stubbed Prisma error → 400 `collectionId`.
+- **URL:** `javascript:`, `data:`, `file:`, `ftp:`, relative, scheme-less, `http:example.com`, 2049 chars → 400; `localhost`, IP, IDN, uppercase scheme → accepted.
+- **Filters:** `collectionId=<own>`, `collectionId=none`, `collectionId=<B's>` → empty, malformed → 400, `q` case-insensitive and literal `%`; combined with pagination.
+- **Validation:** `ownerId`/`id`/timestamps/unknown keys rejected; PATCH `{}`, `title: null`, `url: null` → 400; limits (title 500, notes 10 000).
+- **Mutation checks:** drop `ownerId` from get/update/delete/list → tests fail; drop the app collection check → expected equivalent (see 014c), documented.
