@@ -12,7 +12,7 @@ Re-fetch before relying on them — keys rotate.
 | ID token signing algs advertised | `HS256`, `RS256`, `PS256` | Advertised ≠ in use. |
 | JWKS keys | 2 keys, both `kty=RSA`, `alg=RS256`, `use=sig` | Only RS256 is actually published. API must **pin `algorithms: ['RS256']`** — never trust the token header's `alg` (blocks HS256 key-confusion / `none`). Two keys ⇒ select by `kid`, cache JWKS. |
 
-Open question (to decide in DECISIONS.md): which token the API accepts as Bearer — ID token vs access token for audience `https://bbl-candidate-test-api`. Needs a real login to inspect whether the access token is a JWT for that audience.
+Token choice: resolved — the API accepts the access token (DECISIONS.md ADR-008), confirmed by the real token inspection below.
 
 ---
 

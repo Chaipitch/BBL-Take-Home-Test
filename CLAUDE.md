@@ -31,7 +31,7 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - Decisions index: `DECISIONS.md`. Read it before changing delete/sharing/auth behaviour.
 
 ## Auth rules
-- Bearer credential is the Auth0 **access token** for audience `https://bbl-candidate-test-api` (ADR-008), pending token evidence (BBL-9). Never accept ID tokens as API credentials.
+- Bearer credential is the Auth0 **access token** for audience `https://bbl-candidate-test-api` (ADR-008), confirmed by token inspection (BBL-9). Never accept ID tokens as API credentials.
 - *(provisional — not yet decided, BBL-10)* JWT verification: `algorithms: ['RS256']` pinned; verify `iss` exactly (`https://dev-yg.us.auth0.com/`, trailing slash), `aud`, `exp`/`nbf`; keys from JWKS selected by `kid`. See `docs/auth0/TENANT_FINDINGS.md`.
 - *(provisional — not yet decided, BBL-10)* Auth guard is global (deny by default). Public routes, if any, must be explicitly opted out and listed in `API_DESIGN.md`.
 - Observed token facts (BBL-9): access token is RS256 JWT, `aud` is an **array** (check it *contains* the API audience), no email claims, 2 h lifetime, no refresh token.
