@@ -35,6 +35,7 @@ Short ADRs for calls the brief left open.
 | 015 | Sharing routes and behaviour (BBL-15) | Accepted — pre-approved | Developer pre-approved agent recommendations for remaining backend work |
 | 016 | Seed data (BBL-16) | Accepted — pre-approved | same |
 | 017 | Route-wide authentication sweep test (BBL-18) | Accepted — pre-approved | same |
+| 018 | Frontend architecture: scaffold, routing, auth, data, UI flows, tests (BBL-19–22) | **Proposed** — awaiting developer | — |
 
 ---
 
@@ -595,3 +596,99 @@ A test enumerates every registered route (controllers via Nest's `DiscoveryServi
 - Ran `npx prisma db seed` twice on the dev DB: identical counts (candidate 3 collections / 6 bookmarks; B 2 / 4; C 1 / 1).
 - The Postman guide's separate `seed-user-b.sql` user was replaced by the seed (a second "user B" with a similar email could have made sharing ambiguous); `scripts/manual-test/print-seed-ids.sql` prints the ids.
 - **Fresh-clone check:** cloned the repo into a scratch folder, then `npm ci` → build fails until `npx prisma generate` → then build, 64 unit and 140 e2e tests pass. README documents the generate step.
+
+---
+
+> The pre-approval above covered the backend only. Frontend decisions return to propose → developer decides → implement.
+
+## ADR-018 — Frontend architecture (BBL-19 to BBL-22)
+**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Brief (§3.2), non-negotiable:** React + Vite + TypeScript (no Next.js); React Router ≥ 8; MUI ≥ 9; integrates with our API; pages `/collections` (list, view one, create, delete) and `/bookmarks` (list, view details, create, delete, filter by collection). Auth: Authorization Code + PKCE (S256), callback `http://localhost:3000/callback`, logout `http://localhost:3000`, scope `openid profile email`, audience `https://bbl-candidate-test-api`.
+**Already decided:** frontend on port 3000 (ADR-003); API sends access token as Bearer (ADR-008); delete confirmation popup with bookmark count (ADR-005/005b); duplicate-name warning popup, case-insensitive (ADR-007).
+
+### Facts checked (2026-09-17)
+- Latest stable: Vite 8.3, React 19.3, React Router 8.4, MUI 9.4 (+ Emotion 11), `@auth0/auth0-react` / `@auth0/auth0-spa-js` 2.26, TanStack Query 5.103, MSW 2.15, Playwright 1.63. Peer dependencies are compatible (React Router needs React ≥ 19.2.7; Auth0 React accepts ^19.2.1).
+- `@auth0/auth0-spa-js` 2.26 source: only `response_type: "code"` with `code_challenge_method: "S256"` (no implicit); validates ID token `iss`/`aud`/nonce; without refresh tokens, silent renewal uses a hidden iframe (`prompt=none`, `response_mode=web_message`), which needs the Auth0 app's *Allowed Web Origins* to include `http://localhost:3000` and third-party cookies — **unknown for this tenant; to verify during implementation**. BBL-9 showed no refresh token without `offline_access`.
+
+### 018a — Scaffold
+`npm create vite@9.2.1 frontend -- --template react-ts`, committed unmodified (like the backend), then pin versions exactly (ADR-001 policy). Vite dev server `port: 3000, strictPort: true`.
+**Recommendation:** yes.
+
+### 018b — React Router mode
+| Option | Notes |
+|---|---|
+| **A. Data mode: `createBrowserRouter` + `RouterProvider`** | Plain SPA, route objects, nested layouts, `errorElement`s; works with any data library. |
+| B. Declarative mode (`<BrowserRouter>` + `<Routes>`) | Simplest, but no route-level error boundaries/loaders. |
+| C. Framework mode (React Router's Vite plugin, file routes, SSR-capable) | Closest to a "framework"; heavier, more to explain; not needed for a private SPA. |
+**Recommendation: A.**
+
+### 018c — Authentication library
+| Option | Notes |
+|---|---|
+| **A. `@auth0/auth0-react`** | Official; PKCE S256 + code flow only (verified in source); handles the callback, token caching, `getAccessTokenSilently({ authorizationParams: { audience } })`, logout with `returnTo`. |
+| B. `oidc-client-ts` + `react-oidc-context` | Generic OIDC, tenant-agnostic; more configuration; Auth0's `audience` must be passed as an extra param. |
+| C. Hand-rolled PKCE (like `scripts/inspect-tokens.mjs`) | Maximum control and explainability; we'd own state/nonce/ID-token validation and renewal — easy to get subtly wrong. |
+**Recommendation: A.**
+
+### 018d — Token storage and session renewal
+| Option | Notes |
+|---|---|
+| **A. In memory (SDK default), no refresh tokens** | Token never touches `localStorage` (not readable by injected scripts after a reload). On page reload the SDK tries silent renewal; if the tenant blocks it, the app redirects to Auth0, which returns immediately while the Auth0 session cookie is valid. |
+| B. `localStorage` cache | Survives reloads without a redirect; any XSS can read the token. |
+| C. Refresh tokens (`useRefreshTokens` + `offline_access`) | Smooth renewal without iframes, but requires refresh-token rotation to be enabled on a tenant we don't control; unverified. |
+**Recommendation: A**, and verify silent renewal on this tenant; document what happens on reload.
+
+### 018e — Server data
+| Option | Notes |
+|---|---|
+| **A. TanStack Query + a small typed API client** | Caching, loading/error states, mutation → invalidate list; token obtained per request from the Auth0 hook. Widely known. |
+| B. React Router loaders/actions | Built into the required router; loaders run outside React, so the Auth0 token getter must be passed in; revalidation after actions is automatic. |
+| C. `fetch` in `useEffect` | No dependency; re-implements caching, races, and error states by hand. |
+**Recommendation: A.**
+
+### 018f — API client
+Hand-written TypeScript types mirroring `API_DESIGN.md` (no OpenAPI to generate from); one `apiFetch` that adds `Authorization: Bearer`, parses Problem Details into a typed `ApiError { status, code, detail, errors, bookmarkCount }`, and on `401` sends the user to login. Base URL from `VITE_API_BASE_URL`; Auth0 domain/client id/audience from `VITE_*` env (public values, `.env.example` committed).
+**Recommendation:** yes.
+
+### 018g — Pages and routes
+| Route | Content |
+|---|---|
+| `/` | redirect to `/collections` |
+| `/callback` | Auth0 redirect target; shows "Signing in…" then returns to the page the user started from |
+| `/collections` | list (paginated), create dialog, delete |
+| `/collections/:id` | view one: name, rename, its bookmarks, delete |
+| `/bookmarks` | list, **filter by collection** (incl. "Uncategorised") and title search, create dialog, delete |
+| `/bookmarks/:id` | details, edit, move to collection, delete |
+All routes except `/callback` require login (redirect to Auth0 otherwise). Shared-collection pages are BBL-23 (after this ADR).
+**Question:** "view one" / "view details" as **routes (recommended — linkable, back button works)** or as dialogs/drawers on the list page?
+
+### 018h — Filter state
+`/bookmarks?collectionId=<id|none>&q=` kept in the **URL search params** (recommended — shareable, survives reload, back button) vs component state.
+
+### 018i — Delete-collection confirmation flow (ADR-005/005b)
+| Option | Notes |
+|---|---|
+| **A. Confirm, then let the API decide:** dialog "Delete *X*?" → `DELETE` → `204` done; `409` → dialog updates to "*X* contains **N** bookmarks. Delete them too?" → `DELETE ?confirm=true` | Exact count from the API; empty collections need one confirmation, non-empty two. No extra request. |
+| B. Count first via `GET /collections/:id/bookmarks?limit=100`, one dialog | One dialog, but the count is "100+" for large collections and can be stale. |
+**Recommendation: A.**
+
+### 018j — Duplicate collection name warning (ADR-007)
+The list is paginated, so "loaded collections" may not include the duplicate.
+- **A. Before create/rename, call `GET /collections?name=<name>` and compare trimmed, case-insensitive for an exact match (recommended)** — accurate; one extra request only when saving. *Refines ADR-007's "compare against loaded collections".*
+- B. Compare against loaded pages only, as ADR-007 says — can miss duplicates.
+
+### 018k — Rendering user content safely
+Bookmark URLs rendered as links only if the scheme is `http`/`https` (defence in depth over the API rule), with `target="_blank" rel="noopener noreferrer"`; everything else rendered as text through React (no `dangerouslySetInnerHTML`).
+**Recommendation:** yes.
+
+### 018l — UI kit usage
+MUI 9 with `CssBaseline`, default theme plus a small palette, Emotion (MUI's default engine), `@mui/icons-material`. No other CSS framework.
+**Recommendation:** yes.
+
+### 018m — Frontend tests
+| Option | Notes |
+|---|---|
+| **A. Vitest + React Testing Library + MSW (mocked API, mocked Auth0 hook)** for components and flows (delete dialog 204/409, duplicate warning, filters in URL, 401 → login, unsafe URL rendered as text); **plus a manual real-login checklist** | Fast, deterministic; auth mocked at the hook boundary. |
+| B. A + Playwright against the real backend with a locally-signed token (test-only auth bypass) | End-to-end UI + API; needs a test-only way into the app, which must never ship. |
+| C. Playwright with the real Auth0 login | Truest, but the agent must never type the password, and it depends on the tenant in CI. |
+**Recommendation: A** now; decide B later if time allows.
