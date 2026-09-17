@@ -31,7 +31,7 @@ Short ADRs for calls the brief left open.
 | 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
 | 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | Accepted — contract in `API_DESIGN.md` | Developer (agent recommendations; 012g follow the brief; `?q=` on title) |
 | 013 | Collections implementation design + shared API plumbing (BBL-13) | Accepted — implemented | Developer (all agent recommendations, incl. wider delete race and 413) |
-| 014 | Bookmarks implementation design (BBL-14) | **Proposed** — awaiting developer | — |
+| 014 | Bookmarks implementation design (BBL-14) | Accepted | Developer (all agent recommendations) |
 
 ---
 
@@ -466,7 +466,7 @@ Contract lists it as not yet implemented.
 - **Content-Type** of errors is `application/problem+json`; `Location` exposed via CORS for the SPA.
 
 ## ADR-014 — Implementation design for `/bookmarks` (BBL-14)
-**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Status.** Accepted — developer, 2026-09-17: all recommendations (014b `{ id, ownerId }`, 014c map P2003 → 400, 014d protocol-restricted URL, credentials in URLs allowed).
 **Already decided (inputs).** Contract in `API_DESIGN.md` §3–§6 (ADR-012): fields per the brief; PUT omits → `notes`/`collectionId` null; PATCH partial, `null` clears; http/https URLs only; empty notes → null; `collectionId` not the caller's → `400` field error; `?collectionId=<uuid|none>`, `?q=` on title; not-yours filter → empty list. ADR-005a: app check **and** composite FK. ADR-013: explicit `ownerId` on every query, Problem Details, `@ValidBody`/`@ValidQuery`/`@IdParam`, `containsText`, contract-field `select`, cursor pagination — all reused as-is.
 
 ### Facts checked before proposing (2026-09-17)
