@@ -588,3 +588,10 @@ A test enumerates every registered route (controllers via Nest's `DiscoveryServi
 - Owner share routes check collection ownership **before** looking up the email, so `recipient_not_found` is only observable on your own collections (test: someone else's collection returns the generic 404 for both valid and unknown emails).
 - ADR-017 sweep: routes discovered from `@Controller`/`@Get` metadata (8 known routes asserted present so the sweep can't pass vacuously); every route → 401. Mutations: `@Public()` on `GET /me` → sweep reports `GET /me → 500`; a `@Delete` added to `SharedController` → GET-only test fails.
 - `IdParam(name)` now accepts a parameter name (`:shareId`).
+
+### Implementation notes (ADR-016)
+- **Idempotency bug found by the test:** the second run lost a share. Recreating seed user B cascaded away the share the candidate had granted to the old B row, and the candidate block (skipped on re-runs) never recreated it. Fixed by upserting that share on every run.
+- **Useless assertion caught in review:** the first "bookmark owner matches collection owner" check was a Prisma filter that always counted 0. Replaced with a SQL join, and proved it detects a planted mismatch (FK dropped inside a rolled-back transaction).
+- Ran `npx prisma db seed` twice on the dev DB: identical counts (candidate 3 collections / 6 bookmarks; B 2 / 4; C 1 / 1).
+- The Postman guide's separate `seed-user-b.sql` user was replaced by the seed (a second "user B" with a similar email could have made sharing ambiguous); `scripts/manual-test/print-seed-ids.sql` prints the ids.
+- **Fresh-clone check:** cloned the repo into a scratch folder, then `npm ci` → build fails until `npx prisma generate` → then build, 64 unit and 140 e2e tests pass. README documents the generate step.

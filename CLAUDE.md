@@ -65,4 +65,7 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - DB: `docker compose up -d postgres` (dev DB `bookmarks`, test DB `bookmarks_test`).
 - Backend (in `backend/`): `npm run start:dev` (port 4000) · `npm test` (unit, no DB) · `npm run test:e2e` (needs `docker compose up -d postgres`; uses `bookmarks_test`, truncates before each test, files run serially) · `npm run build` · `npm run lint`.
 - Schema changes: `prisma migrate dev` refuses to run non-interactively for some changes; generate SQL with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script`, review, save as a new migration folder, `npx prisma migrate deploy`.
+- Fresh clone: `npm ci` → `cp .env.example .env` → **`npx prisma generate`** (client is gitignored; build fails without it) → `npx prisma migrate deploy` → `npx prisma db seed`.
+- Seed (`prisma/seed.ts`, ADR-016) must stay idempotent and must never delete the real test user's data; `test/seed.e2e-spec.ts` checks both.
+- Sharing: `SharedService` is the only code allowed to grant access through `CollectionShare`; `SharedController` must stay GET-only (guardrail test).
 - Token inspection (developer logs in): `node scripts/inspect-tokens.mjs`.

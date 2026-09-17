@@ -1142,8 +1142,8 @@
       ]
     },
     {
-      "name": "5. Cross-user privacy (needs user B seed)",
-      "description": "Requires bCollectionId and bBookmarkId from scripts/manual-test/seed-user-b.sql (see docs/API_MANUAL_TESTING.md step 4).",
+      "name": "5. Cross-user privacy (needs seed ids)",
+      "description": "Requires bCollectionId and bBookmarkId from scripts/manual-test/print-seed-ids.sql after npx prisma db seed (see docs/API_MANUAL_TESTING.md step 4).",
       "item": [
         {
           "name": "GET B's collection → 404",
@@ -1572,6 +1572,437 @@
           ]
         }
       ]
+    },
+    {
+      "name": "7. Sharing (needs seed ids)",
+      "description": "Uses sharedFromBCollectionId (seed: user B shares 'Team reading list' with the candidate) and bCollectionId.",
+      "item": [
+        {
+          "name": "POST /collections (to share) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman share test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('shareCollectionId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST share with user C (mixed case email) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{shareCollectionId}}/shares",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"  USER-C@Example.com \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const s = pm.response.json();",
+                  "pm.test('owner view: lower-cased email, no recipient id', () => { pm.expect(Object.keys(s).sort()).to.eql(['collectionId','createdAt','email','id']); pm.expect(s.email).to.eql('user-c@example.com'); });",
+                  "pm.test('Location header', () => pm.expect(pm.response.headers.get('Location')).to.eql('/collections/' + s.collectionId + '/shares/' + s.id));",
+                  "pm.collectionVariables.set('shareId', s.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST same share again → 409 already_shared",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{shareCollectionId}}/shares",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user-c@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('problem+json code=already_shared', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('already_shared'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST share with unknown email → 404 recipient_not_found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{shareCollectionId}}/shares",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nobody@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('problem+json code=recipient_not_found', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('recipient_not_found'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST share with yourself → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{shareCollectionId}}/shares",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"candidate@test.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });",
+                  "pm.test('self-share message', () => pm.expect(pm.response.json().errors).to.eql([{field:'email',message:'cannot share a collection with yourself'}]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST share on B's collection → 404 not_found (before email check)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{bCollectionId}}/shares",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nobody@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections/:id/shares → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{shareCollectionId}}/shares"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('contains the share', () => pm.expect(pm.response.json().data.map(s => s.id)).to.include(pm.collectionVariables.get('shareId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /shared/collections → B's shared collection, no ownerId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shared/collections"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "const c = d.find(x => x.id === pm.collectionVariables.get('sharedFromBCollectionId'));",
+                  "pm.test('shared collection present with owner email', () => { pm.expect(c).to.exist; pm.expect(c.ownerEmail).to.eql('user-b@example.com'); });",
+                  "pm.test('recipient shape (no ownerId)', () => d.forEach(x => pm.expect(Object.keys(x).sort()).to.eql(['createdAt','id','name','ownerEmail','sharedAt','updatedAt'])));",
+                  "pm.test('B private collection not listed', () => pm.expect(d.map(x => x.id)).to.not.include(pm.collectionVariables.get('bCollectionId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /shared/collections/:id → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shared/collections/{{sharedFromBCollectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /shared/collections/:id/bookmarks → 200, no ownerId",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shared/collections/{{sharedFromBCollectionId}}/bookmarks"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('has bookmarks', () => pm.expect(d.length).to.be.above(0));",
+                  "pm.test('no ownerId', () => d.forEach(b => pm.expect(b).to.not.have.property('ownerId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /shared/collections/<own collection> → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shared/collections/{{shareCollectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /shared/collections/<B's unshared collection> → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shared/collections/{{bCollectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Recipient write attempt: PATCH /collections/<shared from B> → 404",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{sharedFromBCollectionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"hijacked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE share → 204",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{shareCollectionId}}/shares/{{shareId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE share again → 404",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{shareCollectionId}}/shares/{{shareId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE share test collection → 204",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{shareCollectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
@@ -1609,6 +2040,18 @@
     },
     {
       "key": "bBookmarkId",
+      "value": ""
+    },
+    {
+      "key": "sharedFromBCollectionId",
+      "value": ""
+    },
+    {
+      "key": "shareCollectionId",
+      "value": ""
+    },
+    {
+      "key": "shareId",
       "value": ""
     }
   ]

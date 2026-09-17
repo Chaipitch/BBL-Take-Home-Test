@@ -3,9 +3,9 @@
 Manual, end-to-end check of the running API with a **real Auth0 login**. It complements the automated suites (`npm test`, `npm run test:e2e`), which use locally signed tokens.
 
 Files:
-- `docs/postman/BBL-Bookmarks.postman_collection.json`: 55 requests in 7 folders, each with Postman tests (green/red results).
+- `docs/postman/BBL-Bookmarks.postman_collection.json`: 71 requests in 8 folders, each with Postman tests (green/red results).
 - `docs/postman/BBL-Bookmarks.local.postman_environment.json`: `baseUrl`, Auth0 domain, client id, audience (no secrets).
-- `scripts/manual-test/seed-user-b.sql`: creates a second user "B" for the cross-user checks.
+- `scripts/manual-test/print-seed-ids.sql`: prints seed ids (user B's private collection and bookmark, and the collection B shares with you).
 
 > ⚠️ Postman stores the OAuth token inside the collection. **Never commit a re-exported copy** of the collection after you've fetched a token.
 
@@ -62,25 +62,27 @@ Expect:
 
 If `aud` is missing or the token isn't a JWT, the `audience` parameter wasn't sent → every API call returns 401.
 
-## 4. Create "user B" for the privacy checks
+## 4. Seed data and ids for the privacy and sharing checks
 
-The Auth0 tenant has one test user, so a second user is inserted directly into the dev database:
+The Auth0 tenant has one real user, so the seed adds two seed-only users (B and C) plus data for the real test user, including shares in both directions (ADR-016). It never deletes your own data.
 
 ```bash
-docker exec -i bbl-bookmarks-postgres psql -U bookmarks -d bookmarks -At < scripts/manual-test/seed-user-b.sql
+cd backend && npx prisma db seed && cd ..
+docker exec -i bbl-bookmarks-postgres psql -U bookmarks -d bookmarks -At < scripts/manual-test/print-seed-ids.sql
 ```
 
-It prints two lines, for example:
+The second command prints three lines, for example:
 ```
-bCollectionId=c6a6e86e-…
-bBookmarkId=1698f51f-…
+bCollectionId=5f1421de-…
+bBookmarkId=81e8f320-…
+sharedFromBCollectionId=32df484a-…
 ```
-In Postman, go to the collection → **Variables** tab and paste them into `bCollectionId` and `bBookmarkId` (Current value).
+In Postman, open the collection → **Variables** tab and paste each into the **Current value** of the variable with the same name.
 
 ## 5. Run the requests
 
 **Option A, all at once:** right-click the collection → **Run collection** → keep the order → **Run**. Every request should be green.
-**Option B, one by one:** run folders 0 → 6 in order. Later requests use ids saved by earlier ones (`collectionId`, `bookmarkId`, …).
+**Option B, one by one:** run folders 0 → 7 in order. Later requests use ids saved by earlier ones (`collectionId`, `bookmarkId`, …).
 
 | Folder | What it proves | Expected |
 |---|---|---|
@@ -90,20 +92,21 @@ In Postman, go to the collection → **Variables** tab and paste them into `bCol
 | **3. Bookmarks** | CRUD, filters, collection rules, URL safety | POST 201, blank notes → `null` · filters `collectionId=<mine>`, `none`, `q` · PATCH move between collections, `null` clears · PUT nulls omitted fields · `javascript:` URL → 400 · random `collectionId` → 400 `collection not found` · random id → 404 |
 | **4. Collection bookmarks + delete rules** | Nested list; ADR-005/005b | Nested list 200 · delete non-empty without confirm → **409** + `bookmarkCount` · `confirm=yes` → 400 · `confirm=true` → 204 · its bookmark → 404 (cascade) · empty collection → 204 |
 | **5. Cross-user privacy** | Brief §3 invariant with a second real row | Every GET/PUT/PATCH/DELETE on B's collection or bookmark → **404 with the same body** as a random id · `?collectionId=<B's>` → `{data: [], nextCursor: null}` · `?q=secret` doesn't return B's bookmark · POST into B's collection → **400 `collection not found`**, the same as a random id |
+| **7. Sharing** | ADR-006, ADR-015 | Share your collection with user C (`USER-C@Example.com` matched lower-cased) → 201 · again → 409 `already_shared` · unknown email → 404 `recipient_not_found` · yourself → 400 · on B's collection → generic 404 · list shares · `/shared/collections` shows B's "Team reading list" with `ownerEmail`, **no `ownerId`** · its bookmarks, no `ownerId` · your own or B's unshared collection via `/shared` → 404 · PATCH B's shared collection → 404 (read-only) · revoke → 204, again → 404 |
 | **6. Error handling + CORS** | Problem Details edge cases; CORS allow-list | Malformed JSON → 400 with no parser text · 150 KB body → **413** `payload_too_large` · preflight from `http://localhost:3000` → allowed · from another origin → no `Access-Control-Allow-Origin` |
 
 **Also confirm by hand (not scriptable in Postman):** after folder 5, B's data is untouched:
 ```bash
-docker exec bbl-bookmarks-postgres psql -U bookmarks -d bookmarks -c "select c.name, b.title from \"Collection\" c join \"Bookmark\" b on b.\"collectionId\" = c.id join \"User\" u on u.id = c.\"ownerId\" where u.\"auth0Sub\" = 'manual-test|user-b'"
+docker exec bbl-bookmarks-postgres psql -U bookmarks -d bookmarks -c "select c.name, b.title from \"Collection\" c join \"Bookmark\" b on b.\"collectionId\" = c.id join \"User\" u on u.id = c.\"ownerId\" where u.\"auth0Sub\" = 'seed|user-b' order by c.name"
 ```
-Expected: `B private collection | B secret bookmark` (not `hijacked`).
+Expected: `B private | Only B can see this` and the two "Team reading list" bookmarks, with no `hijacked` names or titles.
 
-## 6. Clean up
+## 6. Clean up / reset
 
+Folders 4 and 7 delete what the run created. To restore the seed-only users' data (B and C), run the seed again; it's idempotent and keeps your own data:
 ```bash
-docker exec bbl-bookmarks-postgres psql -U bookmarks -d bookmarks -c "delete from \"User\" where \"auth0Sub\" = 'manual-test|user-b'"
+cd backend && npx prisma db seed
 ```
-Deleting the user cascades to B's collections and bookmarks. Folder 4 already deletes the collections and bookmarks created by the run.
 
 ## Troubleshooting
 
@@ -113,11 +116,12 @@ Deleting the user cascades to B's collections and bookmarks. Folder 4 already de
 | 401 after ~2 hours | Access tokens live 2 h and no refresh token is issued. Get a new token. |
 | Auth0 error "Callback URL mismatch" | "Authorize using browser" is checked (Postman then uses its own callback). Uncheck it; callback must be `http://localhost:3000/callback`. |
 | `GET /me` 503 | API couldn't fetch Auth0 signing keys (network). Check internet access and retry. |
-| Folder 5 requests fail (e.g. 200 instead of 404) | `bCollectionId` / `bBookmarkId` are empty, so the URL becomes `/collections/`. Run step 4 and paste the ids. |
+| Folder 5 or 7 requests fail (e.g. 200 instead of 404) | Seed id variables are empty, so the URL becomes `/collections/`. Run step 4 and paste the ids. |
+| Folder 7 share with user C → 404 `recipient_not_found` | Seed not run on this database. Run step 4. |
 | Folder 2 "limit=1" test fails (no cursor) | You have only one collection; run the two POST requests first (Run collection does this). |
 | 413 test returns 400 | Body wasn't JSON; the request's pre-request script builds a 150 KB name, so run it inside the collection, not copied out. |
 
 ## How this collection was checked (and what wasn't)
 
-- **Checked by the agent:** both JSON files parse; all 56 Postman test scripts pass `node --check`; each of the 55 requests was sent to the running API without a token and got **401** (the route exists; an unknown route returns 404) or, for the CORS requests, the expected preflight behaviour. The user-B SQL was run against the test database.
+- **Checked by the agent:** both JSON files parse; every Postman test script passes `node --check`; each of the 71 requests was sent to the running API without a token and got **401** (the route exists; an unknown route returns 404) or, for the CORS requests, the expected preflight behaviour. `npx prisma db seed` and `print-seed-ids.sql` were run against the dev database.
 - **Not checked by the agent:** the Postman app itself (import, OAuth dialog, Collection Runner). The OAuth field names in the collection file follow Postman's v2.1 format, so if the Authorization tab looks different after import, set the values from the table in step 3.
