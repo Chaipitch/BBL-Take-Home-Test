@@ -4,78 +4,105 @@ Short ADRs for calls the brief left open.
 
 **Process.** The agent does not make design decisions. It writes a *Proposed* ADR (options + recommendation), the developer decides, and only then is it *Accepted* and implemented. Each ADR records who decided.
 
-> **Correction logged 2026-09-17.** In commit `5431329` the agent implemented several sub-decisions it had not been asked to make (marked **Proposed — already in code** below). The developer stopped it and introduced the propose → decide → implement rule above (now in `CLAUDE.md`). Any Proposed item rejected below will be changed in a follow-up commit.
+> **Correction logged 2026-09-17.** In commit `5431329` the agent implemented several sub-decisions it had not been asked to make. The developer stopped it and introduced the propose → decide → implement rule (now in `CLAUDE.md`). Those items were marked Proposed in `e781d58`, then reviewed by the developer (task board BBL-7). Two were **overridden** (ADR-005b, ADR-006c) and one design detail changed as a result (ADR-006g, schema migration `20260917094500_share_grantee_user_id`).
 
-| ADR | Topic | Status |
-|---|---|---|
-| 001 | Pin dependency versions | Proposed — already in code |
-| 002 | Remove agent skills installed by `prisma init` | Proposed — already applied |
-| 003 | Ports 3000 / 4000 | Proposed — only in docs |
-| 004 | UUID v4 ids | **Accepted** (developer) |
-| 004a | Malformed id → 404 | Proposed — only in docs |
-| 005 | Delete collection → delete its bookmarks, with UI confirmation | **Accepted** (developer) |
-| 005a | Enforce same-owner via composite FK | Proposed — already in code |
-| 006 | Read-only sharing to another registered user | **Accepted** (developer) |
-| 006a–f | Sharing details | Proposed — partly in code |
-| 007 | Schema field details (user table, lengths, indexes) | Proposed — already in code |
+| ADR | Topic | Status | Decided by |
+|---|---|---|---|
+| 001 | Pin dependency versions | Accepted | Developer (agent recommendation) |
+| 002 | Drop agent skills installed by `prisma init` | Accepted | Developer (agent recommendation) |
+| 003 | Frontend 3000, backend 4000 + CORS | Accepted | Developer (agent recommendation) |
+| 004 | UUID v4 ids | Accepted | Developer |
+| 004a | Malformed id → 404 | Accepted | Developer (agent recommendation) |
+| 005 | Delete collection deletes its bookmarks, UI confirmation | Accepted | Developer |
+| 005a | Same-owner enforced by composite FK + app check | Accepted | Developer (agent recommendation) |
+| 005b | API requires `?confirm=true` to delete a non-empty collection | Accepted | Developer (**overrode** agent: no flag) |
+| 006 | Read-only sharing to another registered user | Accepted | Developer |
+| 006a | Owner names recipient by email | Accepted | Developer (agent recommendation) |
+| 006b | Recipient must have a verified email | Accepted | Developer (agent recommendation) |
+| 006c | Unknown/ineligible recipient → 404 | Accepted | Developer (**overrode** agent: same-response) |
+| 006d | Shared data under `/shared/...` routes | Accepted | Developer (agent recommendation) |
+| 006e | Recipient sees bookmarks incl. notes + owner email | Accepted | Developer (agent recommendation) |
+| 006f | Share rules: list/revoke, no self-share, no edit/re-share | Accepted | Developer (agent recommendation) |
+| 006g | Share stored by recipient user id | Accepted | Developer (agent recommendation) |
+| 007 | Schema details; duplicate collection names allowed with UI warning | Accepted | Developer |
+| 008 | API accepts the **access token** as Bearer | Accepted — pending evidence (BBL-9) | Developer (agent recommendation) |
 
 ---
 
 ## ADR-001 — Pin dependency versions
-**Status.** Proposed — already in code.
+**Status.** Accepted.
 **Context.** On 2026-09-17: `prisma@latest = 8.0.0-rc.15` (release candidate) but `@prisma/client@latest = 7.10.0`; installing both "latest" gives mismatched majors. `typescript@latest = 7.0.2`, but `ts-jest` peers `<7` and `@nestjs/cli` 12 ships `~6.0.2`.
-**Options.** (a) Pin exact stable versions: Prisma 7.10.0 ×3, TypeScript 6.0.x. (b) Use `^` ranges on stable majors. (c) Use latest including Prisma 8 RC.
-**Recommendation.** (a) — reproducible for graders; bump deliberately.
+**Decision.** Exact pins: `prisma`, `@prisma/client`, `@prisma/adapter-pg` = `7.10.0`; TypeScript `6.0.x`.
+**Trade-off.** No automatic minor/patch updates; bumps are deliberate.
 
-## ADR-002 — Agent skills installed by `prisma init`
-**Status.** Proposed — already applied (files moved out of repo, not deleted; restorable).
-**Context.** `prisma init` downloaded 9 skills from `github.com/prisma/skills` into `backend/.agents` and symlinked them into `.claude/skills` and `.windsurf/skills`. Some cover products we don't use (MongoDB, Prisma Postgres cloud, Compute).
-**Options.** (a) Don't commit them; keep agent context only in `CLAUDE.md` + `/.agent/`. (b) Commit only the relevant ones (e.g. `prisma-client-api`, `prisma-cli`). (c) Commit all.
-**Recommendation.** (a) or (b). (b) is defensible if you want the agent to have Prisma 7 docs; they'd then count as reviewed agent config.
+## ADR-002 — Drop agent skills installed by `prisma init`
+**Status.** Accepted.
+**Context.** `prisma init` downloaded 9 skills from `github.com/prisma/skills` into `backend/.agents`, symlinked into `.claude/skills` and `.windsurf/skills`. Several cover products we don't use (MongoDB, Prisma Postgres cloud, Compute).
+**Decision.** None committed. Agent context lives only in `CLAUDE.md` and `/.agent/`.
+**Trade-off.** Agents lose vendor Prisma 7 guidance; in exchange every instruction an agent receives in this repo is one we wrote and reviewed.
 
-## ADR-003 — Ports
-**Status.** Proposed — only in docs.
-**Context.** Auth0 callback/logout URLs are fixed to `http://localhost:3000`, so the SPA must serve on 3000.
-**Options.** (a) Frontend 3000, backend 4000, CORS allows only `http://localhost:3000`. (b) Frontend 3000 with Vite proxying `/api` to the backend — same origin, no CORS.
-**Recommendation.** (a) is simpler to reason about; (b) avoids CORS entirely. Your call.
+## ADR-003 — Ports and cross-origin
+**Status.** Accepted.
+**Context.** Auth0 callback/logout URLs are fixed to `http://localhost:3000`.
+**Decision.** Frontend (Vite) on `3000`; API on `4000`; API CORS allows only origin `http://localhost:3000`.
+**Trade-off vs Vite proxy.** CORS must be configured and explained, but dev mirrors a real deployment where SPA and API are separate origins.
 
 ## ADR-004 — Resource ids are UUID v4
-**Status.** Accepted — developer, 2026-09-17.
+**Status.** Accepted.
 **Why.** Sequential ids would leak other users' activity volume, conflicting with "must not learn of the existence of".
 
-### ADR-004a — Malformed id response
-**Status.** Proposed.
-**Options.** (a) `404` — same as not-found, so the id's shape reveals nothing. (b) `400 Bad Request` — more conventional and helpful to API clients.
-**Recommendation.** (a); the leak from (b) is tiny, but (a) keeps one rule: "can't access it → 404".
+### ADR-004a — Malformed id → 404
+**Status.** Accepted.
+**Decision.** A path id that is not a valid UUID returns `404`, identical to a valid id that doesn't exist or isn't yours.
+**Trade-off.** Less helpful to API clients than `400`; keeps one rule: "can't access it → 404".
 
 ## ADR-005 — Deleting a collection deletes its bookmarks
-**Status.** Accepted — developer, 2026-09-17.
-**Decision.** The frontend shows a confirmation popup; if the user proceeds, the collection and all bookmarks inside it are deleted (DB `ON DELETE CASCADE`).
-**Trade-off.** A confirmed action destroys data; no undo.
-**Open follow-ups (need decision).** Should the popup show the number of bookmarks to be deleted? Should the API require an explicit confirmation (e.g. `?deleteBookmarks=true`), since API clients bypass the popup? Agent recommendation: show the count; no API flag.
+**Status.** Accepted.
+**Decision.** Deleting a collection deletes all bookmarks inside it (DB `ON DELETE CASCADE`) and its shares. The frontend shows a confirmation popup **including the number of bookmarks** that will be deleted.
+**Trade-off.** Confirmed deletion is permanent; no undo.
 
-### ADR-005a — Enforce "bookmark's collection belongs to the same owner"
-**Status.** Proposed — already in code.
-**Options.** (a) Composite FK `Bookmark(collectionId, ownerId) → Collection(id, ownerId)`: the database rejects a cross-owner reference even if app code has a bug. (b) Application check only (look up the collection by id + ownerId before writing).
-**Recommendation.** (a) **and** (b): the app check gives a clean 404; the FK is a backstop. Verified manually with a raw SQL probe (cross-owner insert rejected, uncategorised allowed, cascade works); an automated test is still to be written.
+### ADR-005a — Same-owner integrity: composite FK + app check
+**Status.** Accepted.
+**Decision.** Both layers:
+- **App:** before writing a bookmark's `collectionId`, look up the collection by `id` **and** caller's `ownerId`; not found → 404.
+- **DB:** composite FK `Bookmark(collectionId, ownerId) → Collection(id, ownerId)` rejects a cross-owner reference even if app code is wrong. NULL `collectionId` (uncategorised) skips the check.
+**Evidence so far.** Raw SQL probe (manual): cross-owner insert rejected, uncategorised allowed, cascade works. Automated test still to write.
+
+### ADR-005b — API confirmation flag for non-empty collections
+**Status.** Accepted. Developer overrode the agent's "no flag" recommendation so that API clients, not only the UI, get a guard.
+**Decision.** `DELETE /collections/:id`
+- Empty collection → deleted, no flag needed.
+- Has bookmarks and no `?confirm=true` → `409 Conflict` with the bookmark count; nothing deleted.
+- Has bookmarks and `?confirm=true` → collection, bookmarks and shares deleted.
+**Consequence.** The UI can call DELETE, receive the 409 + count, show the popup, and retry with `confirm=true`.
+**Open detail (to decide when writing the API contract).** Race: a bookmark added between the 409 and the confirmed retry is also deleted.
 
 ## ADR-006 — Sharing a collection
-**Status.** Accepted — developer, 2026-09-17.
+**Status.** Accepted.
 **Decision.** An owner can share a collection **read-only** with **another registered user**.
 
-The sub-decisions below are **Proposed** (the `CollectionShare` table in commit `5431329` assumes a–c):
+- **006a — Recipient named by email.** The owner enters an email address.
+- **006b/006c — Eligibility and response.** A valid recipient is a user who has signed in at least once **and** whose email is verified (`email_verified = true`). If no such user exists — unknown email *or* registered-but-unverified — the API returns `404`, identical in both cases. Sharing with yourself → `400`.
+  - **Accepted trade-off (developer, 2026-09-17):** any signed-in user can learn whether an email belongs to a verified account by attempting a share. Chosen for clear feedback to owners over hiding account existence. No rate limiting for now.
+  - Why verified: otherwise anyone who registers an account with someone else's address could receive that person's shares.
+- **006d — Routes.** Recipients read shared data only through `/shared/...` routes. Owner routes (`/collections`, `/bookmarks`) never consult shares, so the exception to the privacy rule lives in one module.
+- **006e — What recipients see.** Collection name, its bookmarks (url, title, notes), and the owner's email. Never internal user ids of others, never the list of other recipients.
+- **006f — Rules.** Only the owner can create, list and revoke shares of a collection. Recipients cannot edit or re-share. Deleting the collection removes its shares.
+- **006g — Storage.** A share row stores the recipient's **user id** (`CollectionShare.granteeUserId → User`), resolved from the email at share time. Access follows the account, not the address: a later email change does not move access. Deleting a user removes shares granted to them. Email verification is checked **at share time**.
 
-- **006a — How the recipient is identified.** (a) By email. (b) By an internal user id (requires a way to find users → enumeration). *Recommend (a).*
-- **006b — Email must be verified.** Only match a signed-in user whose Auth0 `email_verified` is true. Without this, anyone able to register an account with your address receives your shares. *Recommend yes.* Needs checking whether this tenant exposes `email_verified` to the API.
-- **006c — Recipient not registered yet.** (a) Return the same success response and store the share as pending until that user signs in — no enumeration, but the owner can't tell. (b) Return `404` "user not found" — clearer UX, but reveals which emails have accounts. *Recommend (a).* Note: (a) slightly stretches "registered user"; (b) matches it literally.
-- **006d — Where shared data is served.** (a) Separate read-only routes (`/shared/collections`, `/shared/collections/:id/bookmarks`), owner routes never look at shares. (b) Mix into `GET /collections` with a `?scope=shared` filter. *Recommend (a)*: the exception to the privacy rule lives in one auditable place.
-- **006e — What the recipient sees.** Collection name + its bookmarks (url, title, notes) + the owner's email. Not internal user ids, not other recipients. Are notes included? *Recommend yes (they're part of the bookmark).*
-- **006f — Rules.** Owner can list and revoke shares; can't share with own email (`400`); recipient can't edit or re-share; deleting the collection removes its shares.
-
-## ADR-007 — Schema field details
-**Status.** Proposed — already in code.
-- **User table.** Create a `User` row on the first authenticated request, keyed by Auth0 `sub`; store `email`, `emailVerified`, `name`. Alternative: no user table, use `sub` directly as `ownerId` (simpler, but sharing needs email lookup anyway).
-- **Length limits.** Collection name 200, url 2048, title 500, notes 10 000, email 320. Alternative: unlimited `text` with validation only in DTOs.
-- **Duplicate collection names** per user: currently *allowed*. Alternative: unique per owner → `409`.
+## ADR-007 — Schema details
+**Status.** Accepted.
+- **User table.** A `User` row is created on the first authenticated request, keyed by Auth0 `sub`; stores `email`, `emailVerified`, `name`.
+- **Length limits.** Collection name 200, url 2048, title 500, notes 10 000.
+- **Duplicate collection names are allowed** (no DB constraint). The frontend warns before create/rename with a popup ("a collection with this name already exists; this will create identical names"), comparing **client-side, trimmed and case-insensitive** against the user's loaded collections. The API does not check.
 - **Indexes** on `(ownerId, createdAt)` and `(ownerId, collectionId)` for owner-scoped listing/filtering.
-- **Separate test database** `bookmarks_test` (in docker-compose, commit `4d24bbb`).
+- **Separate test database** `bookmarks_test` in docker-compose.
+
+## ADR-008 — Bearer token accepted by the API
+**Status.** Accepted — pending evidence from a real login (task BBL-9). If the tenant issues an opaque or non-API-audience access token, this ADR is reopened.
+**Decision.** The API accepts the **Auth0 access token** issued for audience `https://bbl-candidate-test-api`.
+**Rationale (README one-liner).** Access tokens are issued *for* an API (`aud` = this API); ID tokens are issued for the client app and prove a login to it, not authorisation to call an API.
+**Trade-offs.**
+- Access tokens may not carry `email` / `email_verified`; sharing (ADR-006b) needs those → source to be decided (e.g. Auth0 `/userinfo`, or a tenant rule/action adding claims — the latter is outside our control).
+- The SPA must request the `audience` parameter at login.
+**Rejected.** ID token as Bearer: `aud` is the client id, so any token minted for this SPA would be accepted by the API; no scope/audience separation.

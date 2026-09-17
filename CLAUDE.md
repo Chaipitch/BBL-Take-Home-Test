@@ -1,7 +1,7 @@
 # CLAUDE.md — agent rules for this repo
 
 ## Working rule: the developer decides design
-Do not make design decisions. For any choice with a real alternative (schema, API shape, status codes, auth, security behaviour, versions, tooling), write the options + a recommendation, ask, and wait. Record it in `DECISIONS.md` as *Proposed*; implement only after the developer marks it *Accepted*. Mechanical work that follows an accepted decision is fine. Rules below marked with an ADR that is still *Proposed* are provisional.
+Do not make design decisions. For any choice with a real alternative (schema, API shape, status codes, auth, security behaviour, versions, tooling), write the options + a recommendation, ask, and wait. Record it in `DECISIONS.md` as *Proposed*; implement only after the developer marks it *Accepted*. Mechanical work that follows an accepted decision is fine. Anything below labelled *(provisional — not yet decided)* is a proposal, not a rule.
 
 Personal bookmark manager (BBL Full-Stack take-home). Two services in one repo: `backend/` (API) and `frontend/` (web).
 This file is the single source of truth a fresh agent session needs. Keep it current when decisions change.
@@ -13,10 +13,12 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - Never accept `ownerId` as client input. Strip/reject it.
 - A `collectionId` supplied on a bookmark must be verified to belong to the caller before writing.
 - Any change touching data access must come with a cross-user test (user A tries user B's resource).
-- Owner routes (`/collections`, `/bookmarks`) never consult shares. Share-based reads live only in the shared module and are read-only; they match grantees by *verified* email only.
-- Share creation must not reveal whether an email is registered (same response either way).
-- IDs are UUIDs; a malformed id is a `404`, same as not-found.
-- Deleting a collection cascades to its bookmarks and shares (ADR-005). `bookmark.ownerId` must equal its collection's `ownerId` — enforced by composite FK, don't remove it.
+- Owner routes (`/collections`, `/bookmarks`) never consult shares. Share-based reads live only under `/shared/...` and are read-only (ADR-006d/f).
+- Shares link to the recipient's **user id** (ADR-006g). A recipient must be an existing user with a verified email; otherwise `404` (ADR-006b/c — account enumeration is an accepted, documented trade-off). Self-share → `400`.
+- IDs are UUIDs; a malformed id is a `404`, same as not-found (ADR-004a).
+- Deleting a collection cascades to its bookmarks and shares (ADR-005). Non-empty collection without `?confirm=true` → `409` with bookmark count, nothing deleted (ADR-005b).
+- Duplicate collection names are allowed by the API; the frontend warns (client-side, trimmed, case-insensitive) — ADR-007.
+- `bookmark.ownerId` must equal its collection's `ownerId`: check in app code (look up collection by id + caller's ownerId) **and** keep the composite FK — never remove it (ADR-005a).
 
 ## Stack (pinned — do not substitute)
 - Backend: Node + TypeScript, NestJS, Prisma, PostgreSQL (via `docker compose`).
@@ -25,12 +27,13 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - Versions are pinned exactly (ADR-001): Prisma + @prisma/client + @prisma/adapter-pg `7.10.0`, TypeScript `6.0.x`. Never `npm i <pkg>@latest` without checking dist-tags.
 - Backend is ESM (`"type": "module"`, NodeNext): relative imports need `.js` extensions. Tests use Vitest (Nest 12 default), not Jest.
 - Prisma 7: config in `backend/prisma.config.ts`, client generated to `backend/src/generated/prisma` (gitignored), Postgres via `@prisma/adapter-pg`.
-- Ports: frontend `3000` (fixed by Auth0 callback), backend `4000`.
+- Ports: frontend `3000` (fixed by Auth0 callback), backend `4000`; API CORS allows only `http://localhost:3000` (ADR-003).
 - Decisions index: `DECISIONS.md`. Read it before changing delete/sharing/auth behaviour.
 
 ## Auth rules
-- JWT verification: `algorithms: ['RS256']` pinned; verify `iss` exactly (`https://dev-yg.us.auth0.com/`, trailing slash), `aud`, `exp`/`nbf`; keys from JWKS selected by `kid`. See `docs/auth0/TENANT_FINDINGS.md`.
-- Auth guard is global (deny by default). Public routes, if any, must be explicitly opted out and listed in `API_DESIGN.md`.
+- Bearer credential is the Auth0 **access token** for audience `https://bbl-candidate-test-api` (ADR-008), pending token evidence (BBL-9). Never accept ID tokens as API credentials.
+- *(provisional — not yet decided, BBL-10)* JWT verification: `algorithms: ['RS256']` pinned; verify `iss` exactly (`https://dev-yg.us.auth0.com/`, trailing slash), `aud`, `exp`/`nbf`; keys from JWKS selected by `kid`. See `docs/auth0/TENANT_FINDINGS.md`.
+- *(provisional — not yet decided, BBL-10)* Auth guard is global (deny by default). Public routes, if any, must be explicitly opted out and listed in `API_DESIGN.md`.
 - Never log tokens.
 
 ## Conventions

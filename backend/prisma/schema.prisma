@@ -22,8 +22,9 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  collections Collection[]
-  bookmarks   Bookmark[]
+  collections  Collection[]
+  bookmarks    Bookmark[]
+  sharedWithMe CollectionShare[] @relation("SharedWithMe")
 
   @@index([email])
 }
@@ -63,17 +64,18 @@ model Bookmark {
   @@index([ownerId, collectionId])
 }
 
-/// Read-only grant of one collection to a person identified by email (DECISIONS.md ADR-006).
-/// Matches only an authenticated user whose verified email equals granteeEmail. May be pending.
+/// Read-only grant of one collection to an existing user (DECISIONS.md ADR-006).
+/// The owner names the recipient by email; the API resolves it to a registered user with a verified
+/// email at share time and stores the user id, so access follows the account, not the address.
 model CollectionShare {
-  id           String   @id @default(uuid(4)) @db.Uuid
-  collectionId String   @db.Uuid
-  /// Stored lower-cased and trimmed.
-  granteeEmail String   @db.VarChar(320)
-  createdAt    DateTime @default(now())
+  id            String   @id @default(uuid(4)) @db.Uuid
+  collectionId  String   @db.Uuid
+  granteeUserId String   @db.Uuid
+  createdAt     DateTime @default(now())
 
   collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  grantee    User       @relation("SharedWithMe", fields: [granteeUserId], references: [id], onDelete: Cascade)
 
-  @@unique([collectionId, granteeEmail])
-  @@index([granteeEmail])
+  @@unique([collectionId, granteeUserId])
+  @@index([granteeUserId])
 }
