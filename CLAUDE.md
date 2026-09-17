@@ -55,6 +55,14 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - Map Prisma errors narrowly: `P2025` → 404; `P2003` only for the named constraint you expect (see `isCollectionFkViolation`).
 - e2e tests: build apps with `createTestApp()` or `listenOnLoopback()`; **never `request(app.getHttpServer())`** (requests can reach other local apps — see ADR-013 notes).
 
+## Frontend rules (ADR-018)
+- Stack pinned: React 19.3, React Router 8.4 (data mode), MUI 9.4 + Emotion, `@auth0/auth0-react` 2.26, TanStack Query 5. Vite dev server on port 3000 (strict).
+- **Structure (developer request): reusable UI in `src/components/`, split by area** — `layout/`, `common/`, `collections/`, `bookmarks/` (add a folder per new area, e.g. `shared/`). Route-level screens in `src/pages/` compose components; API access only via `src/api/` hooks; pure helpers in `src/utils/`. Component files export components only (lint `only-export-components`).
+- Auth: tokens stay in memory, no refresh tokens, always request the API `audience`; never render tokens or put them in URLs/storage.
+- User URLs are links only through `SafeLink` (http/https); never `dangerouslySetInnerHTML`.
+- Dialogs are mounted only while open (no state resets in effects).
+- Tests: `npm test` in `frontend/` (Vitest + Testing Library + MSW; Auth0 mocked in `src/test/setup.ts`). After a first-time pass, mutation-check the behaviour the test claims to cover.
+
 ## Conventions
 - Status codes / error shape: follow `API_DESIGN.md` (source of truth). If code and doc disagree, stop and flag it.
 - Decisions not dictated by the brief go in `DECISIONS.md` before implementing.

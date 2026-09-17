@@ -11,5 +11,12 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Explicit values so tests don't depend on a local .env (gitignored).
+    env: {
+      VITE_API_BASE_URL: 'http://api.test',
+      VITE_AUTH0_DOMAIN: 'tenant.test',
+      VITE_AUTH0_CLIENT_ID: 'test-client-id',
+      VITE_AUTH0_AUDIENCE: 'https://api.test',
+    },
   },
 })
