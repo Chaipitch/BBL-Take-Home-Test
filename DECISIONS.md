@@ -35,7 +35,7 @@ Short ADRs for calls the brief left open.
 | 015 | Sharing routes and behaviour (BBL-15) | Accepted — pre-approved | Developer pre-approved agent recommendations for remaining backend work |
 | 016 | Seed data (BBL-16) | Accepted — pre-approved | same |
 | 017 | Route-wide authentication sweep test (BBL-18) | Accepted — pre-approved | same |
-| 018 | Frontend architecture: scaffold, routing, auth, data, UI flows, tests (BBL-19–22) | **Proposed** — awaiting developer | — |
+| 018 | Frontend architecture: scaffold, routing, auth, data, UI flows, tests (BBL-19–22) | Accepted | Developer (all agent recommendations) |
 
 ---
 
@@ -602,7 +602,7 @@ A test enumerates every registered route (controllers via Nest's `DiscoveryServi
 > The pre-approval above covered the backend only. Frontend decisions return to propose → developer decides → implement.
 
 ## ADR-018 — Frontend architecture (BBL-19 to BBL-22)
-**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Status.** Accepted — developer, 2026-09-17: all recommendations (018j refines ADR-007: duplicate check asks the API).
 **Brief (§3.2), non-negotiable:** React + Vite + TypeScript (no Next.js); React Router ≥ 8; MUI ≥ 9; integrates with our API; pages `/collections` (list, view one, create, delete) and `/bookmarks` (list, view details, create, delete, filter by collection). Auth: Authorization Code + PKCE (S256), callback `http://localhost:3000/callback`, logout `http://localhost:3000`, scope `openid profile email`, audience `https://bbl-candidate-test-api`.
 **Already decided:** frontend on port 3000 (ADR-003); API sends access token as Bearer (ADR-008); delete confirmation popup with bookmark count (ADR-005/005b); duplicate-name warning popup, case-insensitive (ADR-007).
 
