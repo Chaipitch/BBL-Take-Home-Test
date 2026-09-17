@@ -25,7 +25,8 @@ Short ADRs for calls the brief left open.
 | 006f | Share rules: list/revoke, no self-share, no edit/re-share | Accepted | Developer (agent recommendation) |
 | 006g | Share stored by recipient user id | Accepted | Developer (agent recommendation) |
 | 007 | Schema details; duplicate collection names allowed with UI warning | Accepted | Developer |
-| 008 | API accepts the **access token** as Bearer | Accepted — pending evidence (BBL-9) | Developer (agent recommendation) |
+| 008 | API accepts the **access token** as Bearer | Accepted — confirmed by token inspection | Developer (agent recommendation) |
+| 009 | Email/email_verified from `/userinfo`, stored, refreshed every 24h | Accepted | Developer (agent recommendation) |
 
 ---
 
@@ -99,10 +100,29 @@ Short ADRs for calls the brief left open.
 - **Separate test database** `bookmarks_test` in docker-compose.
 
 ## ADR-008 — Bearer token accepted by the API
-**Status.** Accepted — pending evidence from a real login (task BBL-9). If the tenant issues an opaque or non-API-audience access token, this ADR is reopened.
+**Status.** Accepted — confirmed 2026-09-17 by a real login (BBL-9, `docs/auth0/TENANT_FINDINGS.md`): the access token is an RS256-signed JWT with `aud` containing `https://bbl-candidate-test-api`.
 **Decision.** The API accepts the **Auth0 access token** issued for audience `https://bbl-candidate-test-api`.
 **Rationale (README one-liner).** Access tokens are issued *for* an API (`aud` = this API); ID tokens are issued for the client app and prove a login to it, not authorisation to call an API.
 **Trade-offs.**
-- Access tokens may not carry `email` / `email_verified`; sharing (ADR-006b) needs those → source to be decided (e.g. Auth0 `/userinfo`, or a tenant rule/action adding claims — the latter is outside our control).
+- Confirmed: the access token carries **no** `email` / `email_verified`; sharing (ADR-006b) needs them → resolved by ADR-009.
+- `aud` is an **array** (our API + Auth0 `/userinfo`), so audience validation must be "contains", not string equality.
+- No refresh token and a 2-hour lifetime; frontend expiry handling is decided separately (BBL-20).
 - The SPA must request the `audience` parameter at login.
 **Rejected.** ID token as Bearer: `aud` is the client id, so any token minted for this SPA would be accepted by the API; no scope/audience separation.
+
+## ADR-009 — Where the API gets the user's email
+**Status.** Accepted — developer, 2026-09-17 (agent recommendation).
+**Context.** The access token (ADR-008) has no `email` / `email_verified` (observed, BBL-9). Sharing needs both: owners name recipients by email, and recipients must be verified (ADR-006b/c). `/userinfo` called with the access token returns both.
+**Options considered.**
+- **A. `/userinfo` at provisioning + periodic refresh** — chosen.
+- B. `/userinfo` on every request — always fresh, but a network call per request and Auth0 rate-limit exposure.
+- C. Frontend sends email from the ID token — rejected: client-controlled, anyone could claim any verified email.
+- D. Tenant action adds email to the access token — rejected: we don't control the tenant.
+**Decision.** When an authenticated request arrives, the API calls Auth0 `/userinfo` with the caller's (already verified) access token and stores `email`, `emailVerified`, `name` on the `User` row if:
+- the user is seen for the first time, or
+- the stored profile was last synced **more than 24 hours** ago.
+**Trade-offs.**
+- Stored email can be up to 24 h stale: an email changed or un-verified in Auth0 still counts for sharing for up to a day.
+- Adds a dependency on Auth0 availability at first sign-in and at each 24 h refresh.
+- Requires a sync timestamp on `User` (schema change, implemented with BBL-11).
+**Open detail (decide in BBL-11).** Behaviour when `/userinfo` fails: on first sign-in (no stored profile) vs on a stale refresh (profile exists).
