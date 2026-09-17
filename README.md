@@ -55,7 +55,34 @@ npm run build
 Full contract, status codes and error format: `API_DESIGN.md`.
 
 ## Frontend
-Not started yet (BBL-19 onwards).
+React 19 + Vite 8 + TypeScript, React Router 8 (data mode), MUI 9, `@auth0/auth0-react` (Authorization Code + PKCE S256, tokens in memory), TanStack Query (ADR-018).
+
+### Setup and run
+```bash
+cd frontend
+npm ci
+cp .env.example .env     # public config: API base URL, Auth0 domain, client id, audience
+npm run dev              # http://localhost:3000 (port fixed by the Auth0 callback URL)
+```
+Needs the backend running on `http://localhost:4000`.
+
+### Tests
+```bash
+cd frontend
+npm test          # Vitest + Testing Library + MSW; Auth0 mocked at the hook boundary
+npm run lint
+npm run build     # tsc -b + vite build
+```
+Real login and full-stack checks: `docs/FRONTEND_MANUAL_TESTING.md`.
+
+### Pages
+| Route | Brief §3.2 |
+|---|---|
+| `/collections` | list, create (duplicate-name warning), delete (confirmation shows the bookmark count) |
+| `/collections/:id` | view one: its bookmarks, rename, add bookmark, delete |
+| `/bookmarks` | list, filter by collection (incl. uncategorised) and title, create, delete; filters in the URL |
+| `/bookmarks/:id` | details, edit, delete |
+| `/callback` | Auth0 redirect target |
 
 ## Status
 | Area | State |
@@ -63,7 +90,8 @@ Not started yet (BBL-19 onwards).
 | Auth0 tenant inspection, real-token verification | done |
 | Backend API: auth guard, `/me`, collections, bookmarks, sharing, seed | done: 64 unit + 144 e2e tests |
 | Postman manual test collection | done (not yet run by the developer) |
-| Frontend | not started |
+| Frontend: login, collections and bookmarks pages | done: 27 tests; real-login checklist not yet run |
+| Frontend: shared collections UI (BBL-23) | not started |
 | `/.agent/` capability, `AI_WORKFLOW.md`, transcripts | not started |
 | Bonus (Docker, CI, `/all`, full-text search) | not started |
 
