@@ -90,7 +90,7 @@ Real login and full-stack checks: `docs/FRONTEND_MANUAL_TESTING.md`.
 | Auth0 tenant inspection, real-token verification | done |
 | Backend API: auth guard, `/me`, collections, bookmarks, sharing, seed | done: 64 unit + 144 e2e tests |
 | Postman manual test collection | done (not yet run by the developer) |
-| Frontend: login, collections and bookmarks pages | done: 27 tests; real-login checklist not yet run |
+| Frontend: login, collections and bookmarks pages | done: 27 tests; real-login checklist passed (reload stays signed in) |
 | Frontend: shared collections UI (BBL-23) | not started |
 | `/.agent/` capability, `AI_WORKFLOW.md`, transcripts | not started |
 | Bonus (Docker, CI, `/all`, full-text search) | not started |

@@ -1,5 +1,7 @@
 # Frontend manual testing (real Auth0 login)
 
+> **Last run: 2026-09-17 by the developer: all sections A–E passed.**
+
 Automated frontend tests (`cd frontend && npm test`) mock Auth0 at the hook boundary (ADR-018m). This checklist covers what they can't: the real login, tokens, and the full stack.
 
 ## Start
@@ -50,6 +52,8 @@ Open **http://localhost:3000** in a normal browser window with DevTools → **Ne
   - quick redirect through Auth0 and back to the same page (silent renewal blocked; session cookie still valid).
 
   Write down which one happened. It decides what `DECISIONS.md` says about reloads.
+
+  **Recorded 2026-09-17 (developer): stayed signed in; silent renewal works on this tenant.**
 - [ ] **Log out** → Auth0 logout → back at `http://localhost:3000` → immediately asked to log in again.
 
 ### E. Privacy smoke test through the UI
