@@ -1,0 +1,1615 @@
+{
+  "info": {
+    "_postman_id": "a98b37e1-0cdb-502c-9310-35d88cbdf992",
+    "name": "BBL Bookmarks API — manual tests",
+    "description": "Manual test collection for the BBL bookmark manager API. Follow docs/API_MANUAL_TESTING.md. Auth: OAuth 2.0 Authorization Code + PKCE (S256) against the Auth0 tenant; the API accepts the ACCESS token. Never commit an exported copy of this collection after getting a token: Postman stores tokens inside it.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "oauth2",
+    "oauth2": [
+      {
+        "key": "grant_type",
+        "value": "authorization_code_with_pkce",
+        "type": "string"
+      },
+      {
+        "key": "authUrl",
+        "value": "{{auth0Domain}}/authorize",
+        "type": "string"
+      },
+      {
+        "key": "accessTokenUrl",
+        "value": "{{auth0Domain}}/oauth/token",
+        "type": "string"
+      },
+      {
+        "key": "clientId",
+        "value": "{{auth0ClientId}}",
+        "type": "string"
+      },
+      {
+        "key": "clientSecret",
+        "value": "",
+        "type": "string"
+      },
+      {
+        "key": "redirect_uri",
+        "value": "http://localhost:3000/callback",
+        "type": "string"
+      },
+      {
+        "key": "useBrowser",
+        "value": false,
+        "type": "boolean"
+      },
+      {
+        "key": "challengeAlgorithm",
+        "value": "S256",
+        "type": "string"
+      },
+      {
+        "key": "scope",
+        "value": "openid profile email",
+        "type": "string"
+      },
+      {
+        "key": "client_authentication",
+        "value": "body",
+        "type": "string"
+      },
+      {
+        "key": "authRequestParams",
+        "value": [
+          {
+            "key": "audience",
+            "value": "{{auth0Audience}}",
+            "enabled": true,
+            "send_as": "request_url"
+          }
+        ],
+        "type": "any"
+      },
+      {
+        "key": "tokenName",
+        "value": "BBL candidate (access token)",
+        "type": "string"
+      },
+      {
+        "key": "addTokenTo",
+        "value": "header",
+        "type": "string"
+      },
+      {
+        "key": "headerPrefix",
+        "value": "Bearer",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0. Sign-in check",
+      "item": [
+        {
+          "name": "GET /me (creates your user on first call)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const me = pm.response.json();",
+                  "pm.test('profile synced from Auth0 /userinfo', () => { pm.expect(me.email).to.eql('candidate@test.com'); pm.expect(me.emailVerified).to.eql(true); });",
+                  "pm.test('exact fields', () => pm.expect(Object.keys(me).sort()).to.eql(['email','emailVerified','id','name']));",
+                  "pm.collectionVariables.set('myUserId', me.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Authentication failures",
+      "item": [
+        {
+          "name": "No token → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('problem+json code=unauthorized', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('unauthorized'); });",
+                  "pm.test('WWW-Authenticate: Bearer', () => pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid token → 401 (same body)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "not-a-real-token",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('problem+json code=unauthorized', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('unauthorized'); });",
+                  "pm.test('WWW-Authenticate invalid_token', () => pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer error=\"invalid_token\"'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Collections",
+      "item": [
+        {
+          "name": "POST /collections → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"  Postman Reading  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const c = pm.response.json();",
+                  "pm.test('Location header', () => pm.expect(pm.response.headers.get('Location')).to.eql('/collections/' + c.id));",
+                  "pm.test('trimmed name, owner is me, exact fields', () => { pm.expect(c.name).to.eql('Postman Reading'); pm.expect(c.ownerId).to.eql(pm.collectionVariables.get('myUserId')); pm.expect(Object.keys(c).sort()).to.eql(['createdAt','id','name','ownerId','updatedAt']); });",
+                  "pm.collectionVariables.set('collectionId', c.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /collections (second, for moving bookmarks) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Archive\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('collection2Id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections → 200 list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('envelope', () => { pm.expect(body).to.have.keys('data','nextCursor'); });",
+                  "pm.test('only my collections', () => body.data.forEach(c => pm.expect(c.ownerId).to.eql(pm.collectionVariables.get('myUserId'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections?name=reading (case-insensitive) → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections?name=READING"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('matches Postman Reading', () => pm.expect(pm.response.json().data.map(c => c.name)).to.include('Postman Reading'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections?name=% (literal %) → 200 no wildcard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections?name=%25"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('no names without %', () => pm.response.json().data.forEach(c => pm.expect(c.name).to.include('%')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections?limit=1 → page 1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections?limit=1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('one item and a cursor', () => { pm.expect(body.data.length).to.eql(1); pm.expect(body.nextCursor).to.be.a('string'); });",
+                  "pm.collectionVariables.set('nextCursor', body.nextCursor);",
+                  "pm.collectionVariables.set('page1FirstId', body.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections?limit=1&cursor=… → page 2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections?limit=1&cursor={{nextCursor}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('different item than page 1', () => pm.expect(pm.response.json().data[0].id).to.not.eql(pm.collectionVariables.get('page1FirstId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections/:id → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{collectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('same id', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('collectionId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /collections/:id → 200",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{collectionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Reading (renamed)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('renamed', () => pm.expect(pm.response.json().name).to.eql('Postman Reading (renamed)'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /collections/:id → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{collectionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Reading\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('patched', () => pm.expect(pm.response.json().name).to.eql('Postman Reading'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections/<random uuid> → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{$guid}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('problem+json code=not_found', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('not_found'); });",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections/not-a-uuid → 404 (same body)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections/not-a-uuid"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST with ownerId in body → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"x\",\n  \"ownerId\": \"{{$guid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });",
+                  "pm.test('ownerId is not allowed', () => pm.expect(pm.response.json().errors).to.deep.include({field:'ownerId',message:'is not allowed'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST with blank name → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });",
+                  "pm.test('field name', () => pm.expect(pm.response.json().errors.map(e => e.field)).to.include('name'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH with {} → 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{collectionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections?sort=name (unknown param) → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections?sort=name"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /collections?cursor=garbage → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections?cursor=garbage"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Bookmarks",
+      "item": [
+        {
+          "name": "POST /bookmarks (uncategorised) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://nestjs.com\",\n  \"title\": \"  NestJS  \",\n  \"notes\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('Location header', () => pm.expect(pm.response.headers.get('Location')).to.eql('/bookmarks/' + b.id));",
+                  "pm.test('trimmed title, blank notes → null, no collection, exact fields', () => { pm.expect(b.title).to.eql('NestJS'); pm.expect(b.notes).to.eql(null); pm.expect(b.collectionId).to.eql(null); pm.expect(Object.keys(b).sort()).to.eql(['collectionId','createdAt','id','notes','ownerId','title','updatedAt','url']); });",
+                  "pm.collectionVariables.set('looseBookmarkId', b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /bookmarks (in collection) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://www.postgresql.org/docs/\",\n  \"title\": \"Postgres docs\",\n  \"notes\": \"read later\",\n  \"collectionId\": \"{{collectionId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('in collection', () => pm.expect(pm.response.json().collectionId).to.eql(pm.collectionVariables.get('collectionId')));",
+                  "pm.collectionVariables.set('bookmarkId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /bookmarks → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('only mine', () => pm.response.json().data.forEach(b => pm.expect(b.ownerId).to.eql(pm.collectionVariables.get('myUserId'))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /bookmarks?collectionId=<mine> → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks?collectionId={{collectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('all in that collection', () => { const d = pm.response.json().data; pm.expect(d.length).to.be.above(0); d.forEach(b => pm.expect(b.collectionId).to.eql(pm.collectionVariables.get('collectionId'))); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /bookmarks?collectionId=none → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks?collectionId=none"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('all uncategorised', () => pm.response.json().data.forEach(b => pm.expect(b.collectionId).to.eql(null)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /bookmarks?q=POSTGRES → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks?q=POSTGRES"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('title contains postgres', () => pm.response.json().data.forEach(b => pm.expect(b.title.toLowerCase()).to.include('postgres')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /bookmarks/:id → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks/{{bookmarkId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /bookmarks/:id move to second collection → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks/{{bookmarkId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collectionId\": \"{{collection2Id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('moved', () => pm.expect(pm.response.json().collectionId).to.eql(pm.collectionVariables.get('collection2Id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /bookmarks/:id back + clear notes → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks/{{bookmarkId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collectionId\": \"{{collectionId}}\",\n  \"notes\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('back, notes cleared', () => { const b = pm.response.json(); pm.expect(b.collectionId).to.eql(pm.collectionVariables.get('collectionId')); pm.expect(b.notes).to.eql(null); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /bookmarks/:id (loose) → 200, omitted fields null",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks/{{looseBookmarkId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://docs.nestjs.com\",\n  \"title\": \"Nest docs\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('replaced', () => { const b = pm.response.json(); pm.expect(b.url).to.eql('https://docs.nestjs.com'); pm.expect(b.notes).to.eql(null); pm.expect(b.collectionId).to.eql(null); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST javascript: URL → 400 (stored XSS blocked)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"javascript:alert(document.cookie)\",\n  \"title\": \"evil\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });",
+                  "pm.test('field url', () => pm.expect(pm.response.json().errors.map(e => e.field)).to.include('url'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST into random collectionId → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com\",\n  \"title\": \"t\",\n  \"collectionId\": \"{{$guid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });",
+                  "pm.test('collection not found', () => pm.expect(pm.response.json().errors).to.eql([{field:'collectionId',message:'collection not found'}]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /bookmarks/<random uuid> → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks/{{$guid}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Collection bookmarks + delete rules",
+      "item": [
+        {
+          "name": "GET /collections/:id/bookmarks → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{collectionId}}/bookmarks"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('contains the bookmark', () => pm.expect(pm.response.json().data.map(b => b.id)).to.include(pm.collectionVariables.get('bookmarkId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE non-empty collection without confirm → 409",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{collectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('problem+json code=collection_not_empty', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('collection_not_empty'); });",
+                  "pm.test('bookmarkCount >= 1', () => pm.expect(pm.response.json().bookmarkCount).to.be.at.least(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE with confirm=yes → 400",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{collectionId}}?confirm=yes"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE with confirm=true → 204",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{collectionId}}?confirm=true"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET deleted collection's bookmark → 404 (cascade)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks/{{bookmarkId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE empty collection (no confirm needed) → 204",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{collection2Id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE loose bookmark → 204",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks/{{looseBookmarkId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Cross-user privacy (needs user B seed)",
+      "description": "Requires bCollectionId and bBookmarkId from scripts/manual-test/seed-user-b.sql (see docs/API_MANUAL_TESTING.md step 4).",
+      "item": [
+        {
+          "name": "GET B's collection → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{bCollectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT B's collection → 404",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{bCollectionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"hijacked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH B's collection → 404",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections/{{bCollectionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"hijacked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE B's collection → 404",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{bCollectionId}}?confirm=true"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET B's collection bookmarks → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/collections/{{bCollectionId}}/bookmarks"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET B's bookmark → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks/{{bBookmarkId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH B's bookmark → 404",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks/{{bBookmarkId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"hijacked\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE B's bookmark → 404",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks/{{bBookmarkId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('identical 404 body (not yours == missing == malformed)', () => pm.expect(pm.response.json()).to.eql({type:'about:blank',title:'Not Found',status:404,detail:'The requested resource was not found',code:'not_found'}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /bookmarks?collectionId=<B's> → 200 empty",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks?collectionId={{bCollectionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('empty page', () => pm.expect(pm.response.json()).to.eql({data: [], nextCursor: null}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /bookmarks?q=secret → no B data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/bookmarks?q=secret"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('no B bookmark', () => pm.expect(pm.response.json().data.map(b => b.id)).to.not.include(pm.collectionVariables.get('bBookmarkId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST bookmark into B's collection → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bookmarks",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com\",\n  \"title\": \"sneaky\",\n  \"collectionId\": \"{{bCollectionId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('same error as a random collection id', () => pm.expect(pm.response.json().errors).to.eql([{field:'collectionId',message:'collection not found'}]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Error handling + CORS",
+      "item": [
+        {
+          "name": "Malformed JSON → 400 without parser details",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem+json code=validation_failed', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('validation_failed'); });",
+                  "pm.test('no parser internals', () => pm.expect(pm.response.text()).to.not.match(/position|JSON|token/i));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Body over 100 KB → 413",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"{{bigName}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('bigName', 'x'.repeat(150000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 413', () => pm.response.to.have.status(413));",
+                  "pm.test('problem+json code=payload_too_large', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().code).to.eql('payload_too_large'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CORS preflight from http://localhost:3000 → allowed",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "http://localhost:3000"
+              },
+              {
+                "key": "Access-Control-Request-Method",
+                "value": "POST"
+              },
+              {
+                "key": "Access-Control-Request-Headers",
+                "value": "authorization,content-type"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));",
+                  "pm.test('allow-origin', () => pm.expect(pm.response.headers.get('Access-Control-Allow-Origin')).to.eql('http://localhost:3000'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CORS preflight from another origin → no allow header",
+          "request": {
+            "method": "OPTIONS",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "https://evil.example"
+              },
+              {
+                "key": "Access-Control-Request-Method",
+                "value": "GET"
+              }
+            ],
+            "url": "{{baseUrl}}/collections",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('no allow-origin', () => pm.expect(pm.response.headers.has('Access-Control-Allow-Origin')).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "myUserId",
+      "value": ""
+    },
+    {
+      "key": "collectionId",
+      "value": ""
+    },
+    {
+      "key": "collection2Id",
+      "value": ""
+    },
+    {
+      "key": "bookmarkId",
+      "value": ""
+    },
+    {
+      "key": "looseBookmarkId",
+      "value": ""
+    },
+    {
+      "key": "nextCursor",
+      "value": ""
+    },
+    {
+      "key": "page1FirstId",
+      "value": ""
+    },
+    {
+      "key": "bCollectionId",
+      "value": ""
+    },
+    {
+      "key": "bBookmarkId",
+      "value": ""
+    }
+  ]
+}
