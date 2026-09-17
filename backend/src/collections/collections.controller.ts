@@ -17,7 +17,8 @@ import {
   type ListCollectionBookmarksQuery,
   type ListCollectionsQuery,
 } from './collections.schemas.js';
-import { CollectionsService, type BookmarkDto, type CollectionDto } from './collections.service.js';
+import type { BookmarkDto } from '../bookmarks/bookmark.select.js';
+import { CollectionsService, type CollectionDto } from './collections.service.js';
 
 /** HTTP only. Identity comes from @CurrentUser(); all queries live in CollectionsService. */
 @Controller('collections')

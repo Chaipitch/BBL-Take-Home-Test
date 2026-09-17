@@ -10,7 +10,7 @@ Contract for the bookmark-manager API (`backend/`, NestJS). Decisions behind eac
 | User provisioning, `GET /me` | Implemented (BBL-11) |
 | Problem Details error format, validation pipe, 413 | Implemented (BBL-13) |
 | `/collections`, `GET /collections/:id/bookmarks` | Implemented (BBL-13) |
-| `/bookmarks` | Contract only (BBL-14) |
+| `/bookmarks` | Implemented (BBL-14) |
 | CORS (allow only `http://localhost:3000`) | Implemented (BBL-13) |
 | Sharing `/shared/...` | Specified in BBL-15 |
 
@@ -142,7 +142,7 @@ The user row is created and its profile synced from Auth0 `/userinfo` inside the
 
 Known and accepted races [012l, 013d]: delete runs as *find → count → delete*. A bookmark added between a `409` and the confirmed retry is deleted too; and a bookmark added in the milliseconds between the count (0) and the delete is deleted even though `confirm` was not sent.
 
-### Bookmarks — BBL-14
+### Bookmarks — implemented (BBL-14)
 
 | Method & path | Body | Success | Errors |
 |---|---|---|---|
@@ -161,9 +161,10 @@ Known and accepted races [012l, 013d]: delete runs as *find → count → delete
 |---|---|---|---|
 | Authentication | Global `AuthGuard`, deny by default; RS256 only, exact issuer, audience contains the API, `exp`/`sub` required | Implemented | `backend/src/auth/auth.guard.spec.ts` (+ mutation checks, real-token check) |
 | Identity source | `ownerId` comes only from `@CurrentUser().id`, resolved from the verified token's `sub`; never from body/query/params; request bodies containing `ownerId` → `400` | Implemented | `test/users.e2e-spec.ts`; `test/collections.e2e-spec.ts` (ownerId in POST/PUT/PATCH) |
-| Data access | Every query on owned data filters by `ownerId`; single-row reads/writes use the compound unique `id_ownerId`, so not-found and not-yours are the same Prisma result | Collections implemented; bookmarks BBL-14 | `test/collections.e2e-spec.ts` cross-user tests for GET/PUT/PATCH/DELETE/nested list; mutation check: removing `ownerId` from get/update/list fails tests |
-| Existence hiding | "not yours", "doesn't exist" and malformed path id → identical `404` (fixed `detail` text; raw pipe messages never echoed); filters by someone else's `collectionId` → identical empty list; UUIDs | Collections implemented; bookmark filter BBL-14 | `test/collections.e2e-spec.ts` compares the three 404 bodies for equality |
-| Relation integrity | Service check + composite FK so a bookmark can never point at another user's collection | FK implemented; service check with BBL-14 | manual SQL probe (ADR-005a); automated test with BBL-14 |
+| Data access | Every query on owned data filters by `ownerId`; single-row reads/writes use `id_ownerId` (collections) or `{ id, ownerId }` (bookmarks), so not-found and not-yours are the same Prisma result | Implemented | `test/collections.e2e-spec.ts`, `test/bookmarks.e2e-spec.ts` cross-user tests for every route; mutation checks: removing `ownerId` from any get/update/delete/list fails tests |
+| Existence hiding | "not yours", "doesn't exist" and malformed path id → identical `404` (fixed `detail` text); `?collectionId=` of someone else's collection → same empty page as an own empty collection or a random id; assigning someone else's collection → same `400` as a random id; UUIDs | Implemented | both e2e files compare the response bodies for equality |
+| Relation integrity | Service check (`id_ownerId` lookup → 400) **and** composite FK `(collectionId, ownerId)`; an FK race maps to the same 400 | Implemented | `test/bookmarks.e2e-spec.ts` (POST/PUT/PATCH into B's collection); `bookmarks.service.spec.ts` (FK race mapping); mutation: removing either layer alone keeps the API correct, removing both fails 3 tests |
+| Stored-XSS prevention | Bookmark URLs must be absolute `http`/`https`; plain `z.url()` would accept `javascript:`/`data:`/`file:` | Implemented | `test/bookmarks.e2e-spec.ts` URL cases; mutation: plain `z.url()` fails 6 tests |
 | Input validation | Every body/query goes through a zod schema via `@ValidBody`/`@ValidQuery`; strict objects; a test inspects every registered route and fails on a bare `@Body`/`@Query` (Nest's pipe silently skips params without a schema) | Implemented | `test/api-guardrails.e2e-spec.ts` (self-tested; mutation: bare `@Body()` fails it) |
 | Profile/email | Email for sharing comes only from Auth0 `/userinfo` server-side, verified flag required | Implemented | `test/users.e2e-spec.ts` |
 
@@ -178,4 +179,4 @@ Known and accepted races [012l, 013d]: delete runs as *find → count → delete
 6. **Unvalidated input would compile silently.** Nest 12's schema pipe skips any `@Body()`/`@Query()` without a schema — found by reading the pipe's source before building; guarded by `@ValidBody`/`@ValidQuery` plus a route-metadata test. [ADR-013f]
 7. **Flaky e2e tests blamed on the wrong cause first.** ~20% of runs failed with random 401/404/HTTP parse errors. Keep-alive was suspected and disproved (`Connection: close` didn't help). Actual cause: supertest listening per request on `::` while other local apps held the same port on 127.0.0.1. Fixed by listening once on 127.0.0.1 (0/20 failures after). [ADR-013 notes]
 
-(Bookmark-endpoint mistakes found while building BBL-14 will be added here.)
+8. **URL validation that looks right but allows XSS.** The natural implementation, `z.url()`, accepts `javascript:alert(1)`, `data:` and `file:` URLs. Found by probing zod before building; the contract's http/https rule is enforced with `z.url({ protocol: /^https?$/ })` and 6 tests fail if the restriction is removed. [ADR-014d]

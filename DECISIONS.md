@@ -31,7 +31,7 @@ Short ADRs for calls the brief left open.
 | 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
 | 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | Accepted — contract in `API_DESIGN.md` | Developer (agent recommendations; 012g follow the brief; `?q=` on title) |
 | 013 | Collections implementation design + shared API plumbing (BBL-13) | Accepted — implemented | Developer (all agent recommendations, incl. wider delete race and 413) |
-| 014 | Bookmarks implementation design (BBL-14) | Accepted | Developer (all agent recommendations) |
+| 014 | Bookmarks implementation design (BBL-14) | Accepted — implemented | Developer (all agent recommendations) |
 
 ---
 
@@ -514,3 +514,9 @@ When the body sets a non-null `collectionId`:
 - **Filters:** `collectionId=<own>`, `collectionId=none`, `collectionId=<B's>` → empty, malformed → 400, `q` case-insensitive and literal `%`; combined with pagination.
 - **Validation:** `ownerId`/`id`/timestamps/unknown keys rejected; PATCH `{}`, `title: null`, `url: null` → 400; limits (title 500, notes 10 000).
 - **Mutation checks:** drop `ownerId` from get/update/delete/list → tests fail; drop the app collection check → expected equivalent (see 014c), documented.
+
+### Implementation notes (found while building ADR-014)
+- **Probed before coding:** a violation of the composite FK through `@prisma/adapter-pg` is `P2003` with `meta.driverAdapterError.cause.constraint.index = "Bookmark_collectionId_ownerId_fkey"`; updates/deletes with `where: { id, ownerId }` for the wrong owner raise `P2025`; `findUnique` returns `null`. Only that named constraint is mapped to the `collectionId` 400; a unit test proves another FK violation is not mislabelled.
+- **All 120 e2e + 64 unit tests passed on the first run**, so mutation checks were run before trusting them. Caught: removing `ownerId` from get/replace/patch/delete/list; `collectionId=none` ignored; PUT not nulling omitted fields; empty notes not nulled; **plain `z.url()` (6 failures)**; FK mapping removed or not checking the constraint name (unit tests).
+- **Equivalent mutant, as predicted in 014c:** removing the app-level collection check changes no API response, because the composite FK raises `P2003`, which maps to the same 400. To show this is two real layers rather than one dead check, both were removed together → 3 e2e tests fail (the database still refused the cross-owner write; it surfaced as 500).
+- `bookmarkSelect` moved to `src/bookmarks/bookmark.select.ts`, shared with the collections nested list.

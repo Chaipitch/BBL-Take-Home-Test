@@ -51,6 +51,8 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - Text filters use `containsText()` from `common/filters.ts` — Prisma `contains` does not escape `%`/`_`.
 - Single-row reads/writes on owned data use a compound unique (`id_ownerId`) or `{ id, ownerId }`; never `where: { id }` alone.
 - Errors go through `ProblemDetailsFilter`; never put exception messages from libraries into responses.
+- URLs from users: `z.url({ protocol: /^https?$/ })`, never plain `z.url()` (accepts `javascript:`/`data:`/`file:`).
+- Map Prisma errors narrowly: `P2025` → 404; `P2003` only for the named constraint you expect (see `isCollectionFkViolation`).
 - e2e tests: build apps with `createTestApp()` or `listenOnLoopback()`; **never `request(app.getHttpServer())`** (requests can reach other local apps — see ADR-013 notes).
 
 ## Conventions

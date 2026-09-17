@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { bookmarkSelect, type BookmarkDto } from '../bookmarks/bookmark.select.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { CollectionNotEmptyException } from '../common/errors.js';
 import { containsText } from '../common/filters.js';
@@ -13,19 +14,8 @@ import type {
 
 // ADR-013h: responses are exactly the contract fields; new columns can't leak.
 const collectionSelect = { id: true, name: true, ownerId: true, createdAt: true, updatedAt: true } satisfies Prisma.CollectionSelect;
-const bookmarkSelect = {
-  id: true,
-  url: true,
-  title: true,
-  notes: true,
-  collectionId: true,
-  ownerId: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies Prisma.BookmarkSelect;
 
 export type CollectionDto = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
-export type BookmarkDto = Prisma.BookmarkGetPayload<{ select: typeof bookmarkSelect }>;
 
 const isRecordNotFound = (err: unknown) => err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025';
 

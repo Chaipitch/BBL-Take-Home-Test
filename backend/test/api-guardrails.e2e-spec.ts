@@ -45,7 +45,7 @@ describe('API guardrails (e2e)', () => {
         .getControllers()
         .map((wrapper) => wrapper.metatype as new (...args: never[]) => unknown);
 
-      expect(controllers.map((c) => c.name)).toEqual(expect.arrayContaining(['CollectionsController', 'MeController']));
+      expect(controllers.map((c) => c.name)).toEqual(expect.arrayContaining(['BookmarksController', 'CollectionsController', 'MeController']));
       expect(controllers.flatMap(findUnvalidatedParams)).toEqual([]);
     });
   });
