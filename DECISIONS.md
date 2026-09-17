@@ -29,6 +29,7 @@ Short ADRs for calls the brief left open.
 | 009 | Email/email_verified from `/userinfo`, stored, refreshed every 24h | Accepted | Developer (agent recommendation) |
 | 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
 | 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
+| 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | **Proposed** — awaiting developer | — |
 
 ---
 
@@ -267,3 +268,98 @@ Concurrency after 24 h: several parallel requests may each call `/userinfo` once
 - **Verified manually:** built app starts against the dev DB and maps `GET /` and `GET /me`; `/me` without token → 401; missing `DATABASE_URL` or `AUTH_USERINFO_URI` → app refuses to start.
 - **Verified with a real Auth0 login (2026-09-17)** via `node scripts/inspect-tokens.mjs --api http://localhost:4000/me` against the dev DB (0 users before): real access token → `200 { id, email: "candidate@test.com", emailVerified: true, name: "Candy" }` using the **real** `/userinfo`; real ID token → `401` (audience); no token → `401`. DB row: one user, `auth0Sub` = token `sub`, id = `/me` id, `profileSyncedAt` set. No `/userinfo` warnings; no tokens in logs. Not verified with a real login: the 24 h cache (covered by e2e tests).
 - **Timestamp fix found by that check:** `profileSyncedAt` was 13 ms *before* `createdAt` (sync time taken in app code before the insert; `createdAt` defaulted during it). On creation both are now set to the same instant. e2e asserts `profileSyncedAt >= createdAt`; removing the fix fails it 5/5 runs.
+
+## ADR-012 — API contract for `/collections`, `/bookmarks`, `/me` (BBL-12)
+**Status.** **Proposed** — awaiting developer decision. Nothing implemented. Once accepted, the contract is written to `API_DESIGN.md` and endpoints/tests follow it. Sharing routes (`/shared/...`) are specified in BBL-15.
+**Already decided (inputs).** UUID ids, malformed path id → 404 (004/004a); collection delete cascades, non-empty needs `?confirm=true` else 409 + count (005/005b); same-owner check + composite FK (005a); duplicate names allowed (007); 401/503 rules (010e); `@CurrentUser()` → `{ id, sub }` (011b); length limits: collection name 200, url 2048, title 500, notes 10 000 (007).
+**Brief requires.** Both resources: get one, list, create, PUT, PATCH, delete, **filtering**; `GET /collections/:id/bookmarks`; `/me`. Suggested fields include `ownerId`.
+
+### 012a — Error response body
+| Option | Example |
+|---|---|
+| **A. RFC 9457 Problem Details** (`application/problem+json`) | `{ "type": "about:blank", "title": "Not Found", "status": 404, "detail": "Collection not found", "code": "collection_not_found" }`; validation adds `"errors": [{ "field": "url", "message": "must be an http(s) URL" }]` |
+| B. Keep Nest default | `{ "statusCode": 404, "message": "Not Found", "error": "Not Found" }` — validation `message` becomes an array of strings |
+| C. Custom envelope | `{ "error": { "code": "...", "message": "...", "details": [...] } }` |
+**Recommendation: A** — a published standard (easy to defend), one global exception filter formats every error (including 401/503 from the guard), stable machine-readable `code`. The 401 body stays identical for all auth failures (010e).
+
+### 012b — Status codes
+| Situation | Recommended |
+|---|---|
+| GET one / list, PUT, PATCH success | `200` with the resource / list |
+| POST success | `201` with the resource + `Location: /collections/{id}` |
+| DELETE success | `204` no body |
+| Body/query validation failure, malformed JSON, unknown fields | `400` with `errors[]` |
+| Not found, not yours, malformed path id | `404`, identical body |
+| Delete non-empty collection without `?confirm=true` | `409` with `bookmarkCount` |
+| No/invalid token · signing keys down | `401` · `503` |
+**Question:** validation `400` (recommended — one code, common) or `422 Unprocessable Content` for well-formed JSON that fails rules?
+
+### 012c — Validation approach
+| Option | Notes |
+|---|---|
+| **A. zod 4 schemas + Nest 12's built-in `StandardSchemaValidationPipe`** | One schema per body/query; `z.strictObject` rejects unknown keys by default; PATCH schema derived from PUT (`.partial()`); TypeScript types inferred from the schema, so validation and types can't drift. zod 4.6.5 (2026-09). |
+| B. `class-validator` + `class-transformer` + `ValidationPipe({ whitelist, forbidNonWhitelisted })` | Classic Nest tutorial approach; decorators on DTO classes; relies on decorator metadata; `class-transformer` last released 2022. Easy to forget `forbidNonWhitelisted` and silently strip fields. |
+**Recommendation: A.**
+
+### 012d — Unknown and server-owned fields in request bodies
+`id`, `ownerId`, `createdAt`, `updatedAt`, or any unknown key in a body.
+| Option | Notes |
+|---|---|
+| **A. Reject with 400** | Client learns immediately that `ownerId` can't be set; nothing silently ignored. |
+| B. Silently strip | Lenient, but a client could believe it set `ownerId`. |
+**Recommendation: A.**
+
+### 012e — String input rules
+- Strings are **trimmed**; empty after trimming → 400 for required fields.
+- `notes`: empty after trimming → stored as `null`? **Recommendation: yes** (one representation for "no notes").
+- `url`: absolute URL, scheme **`http` or `https` only** — rejects `javascript:`, `data:`, `file:` which would become XSS/abuse vectors when the frontend renders the link. Stored as given (no normalisation, no fetching). Max 2048.
+- Max lengths enforced in validation → `400` (not a database error → `500`).
+
+### 012f — PUT vs PATCH semantics
+- **PUT = full replacement** of client-editable fields. Collection: `{ name }` required. Bookmark: `{ url, title }` required; `notes`, `collectionId` **optional and default to `null` when omitted** (omitting them clears them). No create-via-PUT: unknown id → 404.
+- **PATCH = partial update.** Only provided fields change; `null` clears a nullable field (`notes`, `collectionId`); `null` on a required field → 400. **Empty PATCH body `{}` → 400** (recommended) or 200 no-op?
+- Both return `200` with the updated resource.
+
+### 012g — Resource representation
+Collection: `{ id, name, createdAt, updatedAt }` · Bookmark: `{ id, url, title, notes, collectionId, createdAt, updatedAt }` · timestamps ISO 8601 UTC · absent optional values as `null` (never omitted).
+**Question — `ownerId` in responses** (the brief's suggested shape includes it):
+- **A. Omit (recommended).** Every owner-route response belongs to the caller, so it carries no information; omitting it means shared-route responses (BBL-15) can reuse the same serializer without leaking another user's internal id. Justify the deviation in `API_DESIGN.md`.
+- B. Include, as suggested.
+**Question — `bookmarkCount` on collections:** include in list/get (needs a count query; lets the UI show the delete popup count up front) or rely on the 409 body? **Recommendation: include.**
+
+### 012h — List responses and pagination
+| Option | Notes |
+|---|---|
+| **A. Envelope + cursor (keyset) pagination** | `{ "data": [...], "nextCursor": "opaque" \| null }`; `?limit=` default 50, max 100; order `createdAt desc, id desc`; cursor encodes the last `(createdAt, id)`. Stable when items are added/deleted between pages; uses the existing `(ownerId, createdAt)` indexes. |
+| B. Envelope + `limit`/`offset` + `total` | Simplest to explain; pages shift when items are inserted; `OFFSET` scans. |
+| C. Bare array, no pagination | Simplest; unbounded responses. |
+**Recommendation: A.** An invalid or tampered cursor → 400.
+**Sorting:** fixed `createdAt desc` (recommended) or an allow-listed `?sort=` (e.g. `createdAt`, `-createdAt`, `title`, `name`)?
+
+### 012i — Filters
+- `GET /collections?name=` — case-insensitive **contains** on name.
+- `GET /bookmarks?collectionId=<uuid>` — bookmarks in that collection; `?collectionId=none` — uncategorised only.
+- `GET /bookmarks?q=` — case-insensitive contains on **title** (full-text over notes stays a bonus) — include or skip?
+- **Unknown query parameters → 400** (recommended) or ignored?
+- **Filtering by a `collectionId` that isn't yours or doesn't exist:**
+  - **A. `200` with an empty list (recommended).** The filter is a WHERE clause scoped to the caller; the response is identical for "not yours", "doesn't exist" and "yours but empty", so nothing leaks, and it needs no extra query.
+  - B. `404`, like the nested route.
+- **Malformed `collectionId` in the query string:** `400` (it's query validation) — note this differs from malformed *path* ids (404, ADR-004a) — or `404` for consistency?
+
+### 012j — `GET /collections/:id/bookmarks`
+Collection not found / not yours / malformed id → `404` (it's a path resource). Otherwise same list envelope, pagination and `q` filter as `/bookmarks`, without `collectionId`.
+
+### 012k — Assigning a bookmark to a collection that isn't yours
+On POST/PUT/PATCH `/bookmarks` with a `collectionId` that doesn't exist or belongs to someone else:
+- **A. `400` with `errors: [{ field: "collectionId", message: "collection not found" }]` (recommended).** Same response for "doesn't exist" and "not yours" → no leak; and it isn't confused with "the bookmark itself was not found".
+- B. `404` — ambiguous on PATCH (`404` normally means the bookmark doesn't exist).
+
+### 012l — The ADR-005b race
+A bookmark added between the `409` and the confirmed retry is deleted too.
+- **A. Accept and document (recommended)** — single-user data, the window is seconds.
+- B. `?confirm=<count>`: delete only if the current count matches, else `409` again. Changes the accepted ADR-005b flag.
+
+### 012m — Other
+- Request bodies must be JSON; anything else fails validation → `400` (no separate `415`).
+- No ETags / optimistic concurrency (last write wins) — documented as skipped.
+- OpenAPI/Swagger: **skip** (contract written by hand in `API_DESIGN.md`) or add `@nestjs/swagger` 12.0.1?
