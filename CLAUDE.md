@@ -1,7 +1,7 @@
 # CLAUDE.md — agent rules for this repo
 
 ## Working rule: the developer decides design
-Do not make design decisions. For any choice with a real alternative (schema, API shape, status codes, auth, security behaviour, versions, tooling), write the options + a recommendation, ask, and wait. Record it in `DECISIONS.md` as *Proposed*; implement only after the developer marks it *Accepted*. Mechanical work that follows an accepted decision is fine. Anything below labelled *(provisional — not yet decided)* is a proposal, not a rule.
+Do not make design decisions. For any choice with a real alternative (schema, API shape, status codes, auth, security behaviour, versions, tooling), write the options + a recommendation, ask, and wait. Record it in `DECISIONS.md` as *Proposed*; implement only after the developer marks it *Accepted*. Mechanical work that follows an accepted decision is fine. **Never recommend an option that contradicts the brief** (`Full-Stack-Developer-Test.pdf` §3–§5), including its suggested resource fields; only propose alternatives where the brief is silent, and label brief-permitted additions as additions. Anything below labelled *(provisional — not yet decided)* is a proposal, not a rule.
 
 Personal bookmark manager (BBL Full-Stack take-home). Two services in one repo: `backend/` (API) and `frontend/` (web).
 This file is the single source of truth a fresh agent session needs. Keep it current when decisions change.

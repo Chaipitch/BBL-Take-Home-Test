@@ -321,11 +321,12 @@ Concurrency after 24 h: several parallel requests may each call `/userinfo` once
 - Both return `200` with the updated resource.
 
 ### 012g — Resource representation
-Collection: `{ id, name, createdAt, updatedAt }` · Bookmark: `{ id, url, title, notes, collectionId, createdAt, updatedAt }` · timestamps ISO 8601 UTC · absent optional values as `null` (never omitted).
-**Question — `ownerId` in responses** (the brief's suggested shape includes it):
-- **A. Omit (recommended).** Every owner-route response belongs to the caller, so it carries no information; omitting it means shared-route responses (BBL-15) can reuse the same serializer without leaking another user's internal id. Justify the deviation in `API_DESIGN.md`.
-- B. Include, as suggested.
-**Question — `bookmarkCount` on collections:** include in list/get (needs a count query; lets the UI show the delete popup count up front) or rely on the 409 body? **Recommendation: include.**
+**Follows the brief's suggested shape exactly** (§3.1.4):
+- Collection: `{ id, name, ownerId, createdAt, updatedAt }`
+- Bookmark: `{ id, url, title, notes, collectionId, ownerId, createdAt, updatedAt }`
+- Timestamps ISO 8601 UTC; `notes` / `collectionId` present as `null` when empty (never omitted).
+
+> **Revised 2026-09-17 (developer: "don't go against the brief").** The first draft recommended omitting `ownerId` and adding `bookmarkCount`. Omitting `ownerId` contradicted the brief's suggested shape, so it was withdrawn. `bookmarkCount` would be an addition the brief permits only with justification; it is not needed (the delete popup gets the count from the `409`, ADR-005b), so it is no longer recommended. Proposals are now checked against the brief before being written (rule added to `CLAUDE.md`).
 
 ### 012h — List responses and pagination
 | Option | Notes |
