@@ -30,6 +30,7 @@ Short ADRs for calls the brief left open.
 | 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
 | 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
 | 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | Accepted — contract in `API_DESIGN.md` | Developer (agent recommendations; 012g follow the brief; `?q=` on title) |
+| 013 | Collections implementation design + shared API plumbing (BBL-13) | **Proposed** — awaiting developer | — |
 
 ---
 
@@ -366,3 +367,91 @@ A bookmark added between the `409` and the confirmed retry is deleted too.
 - Request bodies must be JSON; anything else fails validation → `400` (no separate `415`).
 - No ETags / optimistic concurrency (last write wins) — documented as skipped.
 - OpenAPI/Swagger: **skip** (contract written by hand in `API_DESIGN.md`) or add `@nestjs/swagger` 12.0.1?
+
+## ADR-013 — Implementation design for `/collections` and shared API plumbing (BBL-13)
+**Status.** **Proposed** — awaiting developer decision. Nothing implemented. Implements the contract in `API_DESIGN.md` (ADR-012); only *how*, not *what*, except 013e which may amend the contract.
+
+### Facts checked before proposing (2026-09-17)
+1. **Nest 12 `StandardSchemaValidationPipe` silently skips validation when a parameter has no schema** (`if (!schema) return value` in its source). A plain `@Body()` compiles and accepts anything. Schemas attach via `@Body({ schema })` / `@Query({ schema })`.
+2. **Malformed JSON** reaches a global exception filter as `BadRequestException` whose message contains parser internals ("Expected property name or '}' in JSON at position …") — must not be echoed.
+3. **Bodies over Express's 100 KB default** raise `PayloadTooLargeError` (status 413), which is *not* a Nest `HttpException` → a naive filter turns it into 500. The contract has no 413.
+4. **`text/plain` bodies** arrive as `undefined` → schema validation returns 400 as the contract says.
+5. **Prisma** exposes compound unique `id_ownerId` on `Collection` (from `@@unique([id, ownerId])`), so `findUnique` / `update` / `delete` can match id **and** owner in one statement; not found → `null` / `P2025`.
+6. Nest's `ParseUUIDPipe` supports `errorHttpStatusCode`, so malformed path ids can return 404 with no custom code.
+
+### 013a — Module layout
+- `src/common/` — Problem Details exception filter, validation decorators, UUID path pipe, cursor helpers.
+- `src/collections/` — `collections.controller.ts` (HTTP only), `collections.service.ts` (all queries), `collections.schemas.ts` (zod body/query schemas + inferred types), `collections.module.ts`.
+**Recommendation:** as above (controller thin, service owns every Prisma call).
+
+### 013b — How every query is scoped to the owner
+| Option | Notes |
+|---|---|
+| **A. Explicit `ownerId` parameter on every service method; every Prisma call includes it** | Reads: `findUnique({ where: { id_ownerId: { id, ownerId } } })`, lists `where: { ownerId, … }`. Writes: `update/delete({ where: { id_ownerId } })` — a single statement, so there's no read-then-write gap. Visible in every line; easy to review and to explain live. |
+| B. Per-request Prisma client extension that injects `ownerId` automatically | Central, but "magic": the filter is invisible at the call site, and it must handle every operation type correctly — harder to defend in the live data-access review. |
+| C. Postgres Row-Level Security (`SET app.user_id` per transaction + policies) | Strongest (database enforces it even for raw SQL), but every request needs a transaction to set the session variable on a pooled connection; large added complexity. |
+**Recommendation: A**, proven by cross-user tests and a mutation check (removing `ownerId` from a query must fail a test).
+
+### 013c — "Not found" handling
+- Read: `findUnique` by `id_ownerId` → `null` → 404.
+- Update/delete: by `id_ownerId`; Prisma `P2025` (record not found) → 404. No separate existence query.
+- Malformed path id → `ParseUUIDPipe({ errorHttpStatusCode: 404 })` → same 404 body (and Postgres never sees a non-UUID string).
+**Recommendation:** as above.
+
+### 013d — `DELETE /collections/:id` with the confirm rule (ADR-005b)
+Steps are: collection exists for this owner? (404) → has bookmarks and no `confirm`? (409 + count) → delete (cascade).
+| Option | Notes |
+|---|---|
+| **A. Sequential: find → count → delete** | Simple. Race windows both ways: a bookmark added after the count is deleted even when `confirm` was absent (count was 0) or after a 409. Single-user data; window is milliseconds. **Extends the accepted 012l race to the unconfirmed case — needs your OK.** |
+| B. Unconfirmed delete as one conditional statement: `deleteMany({ where: { id, ownerId, bookmarks: { none: {} } } })`; if 0 rows → find + count to answer 404 or 409 | Narrows the "deleted without confirmation" window to a single SQL statement. More code paths to test; the exact concurrency guarantee depends on Postgres statement semantics — would be documented as "narrowed", not "eliminated". |
+**Recommendation: A** and document the widened race in API_DESIGN.md. Choose B if "never delete a bookmark without confirmation" should be as strict as reasonably possible.
+
+### 013e — Global error filter (and a contract amendment)
+One `APP_FILTER` that writes every error as Problem Details (`application/problem+json`):
+- `HttpException` → its status, mapped `code`, our own `title`/`detail` — **never** the exception's raw message for 400s from the JSON parser.
+- Validation failures → `400 validation_failed` + `errors: [{ field, message }]` built from schema issues.
+- Errors carrying a numeric `status` from Express/body-parser (e.g. 413) → that status.
+- Anything else → `500 internal_error`, generic body, full error logged server-side.
+- Auth `WWW-Authenticate` headers set by the guard are preserved; 401 body stays identical for every cause.
+**Contract amendment question — request body larger than 100 KB:**
+- **A. Add `413 payload_too_large` to API_DESIGN.md (recommended)** — honest status; notes max 10 000 chars fits well under 100 KB.
+- B. Map it to `400 validation_failed`.
+
+### 013f — Guardrail against unvalidated input (fact 1)
+| Option | Notes |
+|---|---|
+| **A. Own decorators `@ValidBody(schema)` / `@ValidQuery(schema)` (schema is a required argument) + a test that fails if any controller parameter uses `@Body`/`@Query` without a schema** | The test reads Nest's route-argument metadata for every registered controller, so it also catches future routes and agent-written code. |
+| B. Code review / CLAUDE.md rule only | Relies on remembering. |
+| C. Per-parameter explicit pipe `@Body(new ZodPipe(schema))` | Also forces a schema, but bypasses Nest's built-in pipe and still allows a bare `@Body()` elsewhere. |
+**Recommendation: A** (also a candidate for the `/.agent/` reusable capability, BBL-24).
+
+### 013g — Cursor format
+Opaque `base64url(JSON { "c": createdAt ISO, "i": id })`, decoded and validated with zod; anything malformed → 400. Query: `ownerId` AND (`createdAt` < c OR (`createdAt` = c AND `id` < i)), `ORDER BY createdAt DESC, id DESC`, fetch `limit + 1` to know whether `nextCursor` exists.
+| Option | Notes |
+|---|---|
+| **A. Unsigned** | A tampered cursor can only move within the caller's own rows (query is still scoped by `ownerId`), so it can't leak data. |
+| B. HMAC-signed | Detects tampering, needs a secret and key management; no privacy gain. |
+**Recommendation: A.**
+
+### 013h — Response mapping
+Every query uses an explicit Prisma `select` of exactly the contract fields (`id, name, ownerId, createdAt, updatedAt`), so a future column (e.g. on `User` or `Collection`) can never leak into a response by accident.
+**Recommendation:** yes.
+
+### 013i — `name` / `q` filters
+Prisma `contains` + `mode: 'insensitive'` (Postgres `ILIKE`). A test must show that `%` and `_` in the filter are matched literally, not as wildcards (to verify, not assume, that Prisma escapes them).
+
+### 013j — CORS (ADR-003)
+Contract lists it as not yet implemented.
+- **A. Implement now in `main.ts`** (`origin: http://localhost:3000`, methods used by the API, `Authorization` + `Content-Type` headers) with a test — small and already decided.
+- B. With frontend integration (BBL-19/20).
+**Recommendation: A**, or B if you want BBL-13 strictly scoped to collections.
+
+### 013k — Tests planned (e2e, real DB, two users A and B)
+- Every endpoint: happy path; no token → 401 (Problem Details body, identical); **B's collection id used by A → 404 identical to a random UUID and to a malformed id**, for GET, PUT, PATCH, DELETE and `/collections/:id/bookmarks`; lists never contain B's rows.
+- Validation: unknown field, `ownerId`/`id`/`createdAt` in body, empty/whitespace name, 201-char name, empty PATCH, `null` name, malformed JSON (no parser text in body), unknown query param, bad `limit`, tampered cursor, >100 KB body.
+- Pagination: page sizes, `nextCursor` null on last page, no duplicates/gaps when a new collection is inserted between pages.
+- Filters: case-insensitive `name`; `%` / `_` literal; `q` on nested bookmarks.
+- Delete: empty → 204; non-empty → 409 + correct count, nothing deleted; `confirm=true` → 204 and bookmarks gone (cascade); `confirm=yes` → 400; B cannot delete A's.
+- `Location` header on 201; `Content-Type: application/problem+json` on errors.
+- **Guardrail test** (013f) and **mutation checks**: remove `ownerId` from one read and one write → a cross-user test must fail.
+- Bookmarks for `/collections/:id/bookmarks` tests are inserted directly with Prisma (the `/bookmarks` endpoints are BBL-14).
