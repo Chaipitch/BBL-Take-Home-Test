@@ -3,7 +3,8 @@
 // tenant actually issues — decoded token headers/claims, signature check against JWKS, /userinfo.
 // It NEVER prints raw tokens or signatures. The human types the password in the browser.
 //
-// Usage: node scripts/inspect-tokens.mjs            (port 3000 must be free)
+// Usage: node scripts/inspect-tokens.mjs                              (port 3000 must be free)
+//        node scripts/inspect-tokens.mjs --api http://localhost:4000/  (also probe the running API)
 import { createServer } from 'node:http';
 import { randomBytes, createHash, createPublicKey, verify } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -14,6 +15,8 @@ const REDIRECT_URI = 'http://localhost:3000/callback';
 const SCOPE = 'openid profile email';
 const AUDIENCE = 'https://bbl-candidate-test-api';
 const TIMEOUT_MS = 5 * 60 * 1000;
+const apiFlag = process.argv.indexOf('--api');
+const API_URL = apiFlag !== -1 ? process.argv[apiFlag + 1] : undefined;
 
 const b64url = (buf) => buf.toString('base64url');
 const section = (title) => console.log(`\n=== ${title} ===`);
@@ -137,6 +140,18 @@ async function main() {
   const ui = await fetch(config.userinfo_endpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
   console.log('status:', ui.status);
   console.log(ui.ok ? await ui.json() : await ui.text());
+
+  if (API_URL) {
+    section(`API probe: GET ${API_URL} (statuses only)`);
+    const probe = async (label, token, expected) => {
+      const res = await fetch(API_URL, token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+      const verdict = res.status === expected ? 'OK' : 'UNEXPECTED';
+      console.log(`${verdict}  ${label}: ${res.status} (expected ${expected}) www-authenticate=${res.headers.get('www-authenticate') ?? '-'}`);
+    };
+    await probe('real access token', tokens.access_token, 200);
+    await probe('real ID token (aud = client id)', tokens.id_token, 401);
+    await probe('no token', undefined, 401);
+  }
 }
 
 main().catch((err) => { console.error('\nERROR:', err.message); process.exit(1); });
