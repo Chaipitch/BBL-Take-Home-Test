@@ -1,17 +1,17 @@
 import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
-import type { Principal } from './token-verifier.js';
+import type { AuthenticatedUser } from './user-provisioner.js';
 
 export interface AuthenticatedRequest extends Request {
-  principal?: Principal;
+  user?: AuthenticatedUser;
 }
 
-/** Injects the verified principal set by AuthGuard. */
-export const CurrentUser = createParamDecorator((_data: unknown, ctx: ExecutionContext): Principal => {
-  const principal = ctx.switchToHttp().getRequest<AuthenticatedRequest>().principal;
-  if (!principal) {
+/** Injects `{ id, sub }` set by AuthGuard. Use `id` as ownerId; never take identity from the request body. */
+export const CurrentUser = createParamDecorator((_data: unknown, ctx: ExecutionContext): AuthenticatedUser => {
+  const user = ctx.switchToHttp().getRequest<AuthenticatedRequest>().user;
+  if (!user) {
     // Only reachable if used on a @Public() route — a programming error, never a client error.
-    throw new Error('CurrentUser used on a route without an authenticated principal');
+    throw new Error('CurrentUser used on a route without an authenticated user');
   }
-  return principal;
+  return user;
 });

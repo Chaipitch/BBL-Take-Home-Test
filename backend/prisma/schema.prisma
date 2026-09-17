@@ -14,13 +14,15 @@ datasource db {
 /// A person known to the API, provisioned on their first authenticated request.
 /// Identity is the Auth0 `sub`; email is informational and only trusted for sharing when verified.
 model User {
-  id            String   @id @default(uuid(4)) @db.Uuid
-  auth0Sub      String   @unique
-  email         String?
-  emailVerified Boolean  @default(false)
-  name          String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String    @id @default(uuid(4)) @db.Uuid
+  auth0Sub        String    @unique
+  email           String?
+  emailVerified   Boolean   @default(false)
+  name            String?
+  /// Last successful Auth0 /userinfo sync; null = never synced (ADR-009, ADR-011d).
+  profileSyncedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   collections  Collection[]
   bookmarks    Bookmark[]

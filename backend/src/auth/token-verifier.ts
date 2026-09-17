@@ -4,8 +4,8 @@ import { AUTH_CONFIG, type AuthConfig } from './auth.config.js';
 
 export const JWKS_KEY_SOURCE = Symbol('JWKS_KEY_SOURCE');
 
-/** The only identity the guard hands to the rest of the app (ADR-010f). */
-export interface Principal {
+/** Identity proven by the token. The guard turns this into a DB user (ADR-011a). */
+export interface VerifiedToken {
   sub: string;
   scope: string[];
 }
@@ -49,7 +49,7 @@ export class TokenVerifier {
     @Inject(JWKS_KEY_SOURCE) private readonly keySource: JWTVerifyGetKey,
   ) {}
 
-  async verify(token: string): Promise<Principal> {
+  async verify(token: string): Promise<VerifiedToken> {
     let payload;
     try {
       ({ payload } = await jwtVerify(token, this.keySource, {

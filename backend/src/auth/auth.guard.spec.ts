@@ -1,36 +1,33 @@
-// Runs the real AuthModule (guard + TokenVerifier + jose) over HTTP. Only the key source and
-// config are swapped: tokens are signed with a locally generated RSA key published through a local
-// JWKS, so every check below goes through the same verification code as production.
+// Runs the real AuthModule (guard + TokenVerifier + jose) over HTTP. Only the key source, config and
+// UserProvisioner are swapped: tokens are signed with a locally generated RSA key published through a
+// local JWKS, so every check below goes through the same verification code as production.
+// The provisioner is faked here (no database); its real behaviour is covered in test/users.e2e-spec.ts.
 import { Controller, Get, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import {
-  createLocalJWKSet,
-  errors,
-  exportJWK,
-  exportSPKI,
-  generateKeyPair,
-  importJWK,
-  SignJWT,
-  type JWTPayload,
-  type JWTVerifyGetKey,
-} from 'jose';
+import { createLocalJWKSet, errors, exportJWK, generateKeyPair, importJWK, SignJWT, type JWTVerifyGetKey } from 'jose';
 import { createHmac } from 'node:crypto';
 import request from 'supertest';
-import { AUTH_CONFIG, type AuthConfig } from './auth.config.js';
+import {
+  createTestSigner,
+  nowSeconds,
+  TEST_AUDIENCE as AUDIENCE,
+  TEST_CLIENT_ID as CLIENT_ID,
+  TEST_ISSUER as ISSUER,
+  TEST_KID as KID,
+  testAuthConfig,
+  type TestSigner,
+} from '../../test/support/tokens.js';
+import { AUTH_CONFIG } from './auth.config.js';
 import { AuthModule } from './auth.module.js';
 import { CurrentUser } from './current-user.decorator.js';
 import { Public } from './public.decorator.js';
-import { JWKS_KEY_SOURCE, type Principal } from './token-verifier.js';
-
-const ISSUER = 'https://issuer.test/';
-const AUDIENCE = 'https://api.test';
-const CLIENT_ID = 'spa-client-id';
-const KID = 'test-key-1';
+import { InvalidTokenError, JWKS_KEY_SOURCE } from './token-verifier.js';
+import { UserProvisioner, type AuthenticatedUser } from './user-provisioner.js';
 
 @Controller()
 class ProbeController {
   @Get('private')
-  whoami(@CurrentUser() user: Principal) {
+  whoami(@CurrentUser() user: AuthenticatedUser) {
     return user;
   }
 
@@ -42,49 +39,33 @@ class ProbeController {
 }
 
 const b64 = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
-const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+type Resolve = (sub: string, token: string) => Promise<AuthenticatedUser>;
+const fakeResolve: Resolve = async (sub) => ({ id: `db-id-for-${sub}`, sub });
 
 describe('AuthGuard (real verifier, local test keys)', () => {
   let app: INestApplication;
+  let signer: TestSigner;
   let privateKey: CryptoKey;
   let publicKeyPem: string;
-  let keySource: JWTVerifyGetKey;
-
-  // Default claims mirror the real Auth0 access token observed in BBL-9 (aud is an array).
-  // Overrides are merged into the payload object last. Do NOT use SignJWT's setIssuer/setAudience/
-  // setExpirationTime here: they run after the constructor and silently overwrite the overrides,
-  // which made negative tests pass tokens that were actually valid (caught on first run).
-  const sign = (
-    claims: JWTPayload = {},
-    header: { alg?: string; kid?: string } = {},
-    key: CryptoKey = privateKey,
-  ) =>
-    new SignJWT({
-      iss: ISSUER,
-      aud: [AUDIENCE, `${ISSUER}userinfo`],
-      sub: 'auth0|user-a',
-      iat: nowSeconds(),
-      exp: nowSeconds() + 7200,
-      scope: 'openid profile email',
-      ...claims,
-    })
-      .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: KID, ...header })
-      .sign(key);
+  const sign: TestSigner['sign'] = (...args) => signer.sign(...args);
 
   const get = (path: string, token?: string) => {
     const req = request(app.getHttpServer()).get(path);
     return token === undefined ? req : req.set('Authorization', `Bearer ${token}`);
   };
 
-  async function startApp(source: JWTVerifyGetKey) {
+  async function startApp(source: JWTVerifyGetKey, resolve: Resolve = fakeResolve) {
     const moduleRef = await Test.createTestingModule({
       imports: [AuthModule],
       controllers: [ProbeController],
     })
       .overrideProvider(AUTH_CONFIG)
-      .useValue({ issuer: ISSUER, audience: AUDIENCE, jwksUri: new URL('https://unused.test/jwks') } satisfies AuthConfig)
+      .useValue(testAuthConfig)
       .overrideProvider(JWKS_KEY_SOURCE)
       .useValue(source)
+      .overrideProvider(UserProvisioner)
+      .useValue({ resolve })
       .compile();
     moduleRef.useLogger(false);
     const nest = moduleRef.createNestApplication();
@@ -93,12 +74,10 @@ describe('AuthGuard (real verifier, local test keys)', () => {
   }
 
   beforeAll(async () => {
-    const pair = await generateKeyPair('RS256', { extractable: true });
-    privateKey = pair.privateKey;
-    publicKeyPem = await exportSPKI(pair.publicKey);
-    const jwk = { ...(await exportJWK(pair.publicKey)), kid: KID, alg: 'RS256', use: 'sig' };
-    keySource = createLocalJWKSet({ keys: [jwk] });
-    app = await startApp(keySource);
+    signer = await createTestSigner();
+    privateKey = signer.privateKey;
+    publicKeyPem = signer.publicKeyPem;
+    app = await startApp(signer.keySource);
   });
 
   afterAll(async () => {
@@ -108,7 +87,7 @@ describe('AuthGuard (real verifier, local test keys)', () => {
   describe('accepts', () => {
     it('a valid access token whose aud array contains the API audience', async () => {
       const res = await get('/private', await sign()).expect(200);
-      expect(res.body).toEqual({ sub: 'auth0|user-a', scope: ['openid', 'profile', 'email'] });
+      expect(res.body).toEqual({ id: 'db-id-for-auth0|user-a', sub: 'auth0|user-a' });
     });
 
     it('aud as a plain string equal to the API audience', async () => {
@@ -250,6 +229,62 @@ describe('AuthGuard (real verifier, local test keys)', () => {
         await request(noAlgApp.getHttpServer()).get('/private').set('Authorization', `Bearer ${ps256}`).expect(401);
       } finally {
         await noAlgApp.close();
+      }
+    });
+  });
+
+  describe('user resolution after verification (ADR-011a)', () => {
+    it('passes the verified sub and the raw token to the provisioner', async () => {
+      const calls: Array<[string, string]> = [];
+      const token = await sign({ sub: 'auth0|someone' });
+      const spyApp = await startApp(signer.keySource, async (sub, raw) => {
+        calls.push([sub, raw]);
+        return { id: 'x', sub };
+      });
+      try {
+        await request(spyApp.getHttpServer()).get('/private').set('Authorization', `Bearer ${token}`).expect(200);
+        expect(calls).toEqual([['auth0|someone', token]]);
+      } finally {
+        await spyApp.close();
+      }
+    });
+
+    it('does not call the provisioner when the token is invalid', async () => {
+      let called = false;
+      const spyApp = await startApp(signer.keySource, async (sub) => {
+        called = true;
+        return { id: 'x', sub };
+      });
+      try {
+        await request(spyApp.getHttpServer()).get('/private').set('Authorization', `Bearer ${await sign({ aud: CLIENT_ID })}`).expect(401);
+        expect(called).toBe(false);
+      } finally {
+        await spyApp.close();
+      }
+    });
+
+    it('provisioner InvalidTokenError (e.g. /userinfo 401) → generic 401 invalid_token', async () => {
+      const rejecting = await startApp(signer.keySource, async () => {
+        throw new InvalidTokenError('userinfo_unauthorized');
+      });
+      try {
+        const res = await request(rejecting.getHttpServer()).get('/private').set('Authorization', `Bearer ${await sign()}`);
+        expect(res.status).toBe(401);
+        expect(res.body).toEqual({ message: 'Unauthorized', statusCode: 401 });
+        expect(res.headers['www-authenticate']).toBe('Bearer error="invalid_token"');
+      } finally {
+        await rejecting.close();
+      }
+    });
+
+    it('unexpected provisioner failure (e.g. database down) → 500, request denied', async () => {
+      const broken = await startApp(signer.keySource, async () => {
+        throw new Error('connection refused');
+      });
+      try {
+        await request(broken.getHttpServer()).get('/private').set('Authorization', `Bearer ${await sign()}`).expect(500);
+      } finally {
+        await broken.close();
       }
     });
   });

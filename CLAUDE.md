@@ -34,12 +34,17 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - Bearer credential is the Auth0 **access token** for audience `https://bbl-candidate-test-api` (ADR-008), confirmed by token inspection (BBL-9). Never accept ID tokens as API credentials.
 - JWT verification lives only in `backend/src/auth/token-verifier.ts` (jose, ADR-010): `algorithms: ['RS256']`, exact `iss`, `aud` contains the API audience, `requiredClaims: ['sub','exp']`, 5 s clock tolerance, remote JWKS with jose defaults. Don't add a second verification path.
 - Error classification is by explicit jose error code: token errors → 401 (`WWW-Authenticate: Bearer error="invalid_token"`), JWKS unavailable (`ERR_JWKS_TIMEOUT`, `ERR_JOSE_GENERIC`, `ERR_JWKS_INVALID`, fetch `TypeError`) → 503. Never map all jose errors to 401.
-- `AuthGuard` is global (`APP_GUARD`), deny by default. `@Public()` exists but no route may use it without a developer decision; list any in `API_DESIGN.md`. Controllers get identity only via `@CurrentUser()` → `{ sub, scope }`.
+- `AuthGuard` is global (`APP_GUARD`), deny by default. `@Public()` exists but no route may use it without a developer decision; list any in `API_DESIGN.md`. Controllers get identity only via `@CurrentUser()` → `{ id, sub }`; `id` (User.id) is the `ownerId` for all data (ADR-011b). Never put email on the request or trust it for authorization decisions there.
 - Config: `AUTH_ISSUER`, `AUTH_AUDIENCE`, `AUTH_JWKS_URI` are required; app refuses to start without them.
 - Auth test rule: tests sign tokens with local keys through the real `AuthModule` (override only `AUTH_CONFIG` and `JWKS_KEY_SOURCE`). Build test token payloads as one object — `SignJWT` setters (`setIssuer`, `setAudience`, `setExpirationTime`…) overwrite claims passed to the constructor. After adding a negative test, prove it fails when the check it guards is removed.
 - Observed token facts (BBL-9): access token is RS256 JWT, `aud` is an **array** (check it *contains* the API audience), no email claims, 2 h lifetime, no refresh token.
 - Email/email_verified come only from Auth0 `/userinfo` (called server-side with the verified access token), stored on `User`, refreshed when older than 24 h (ADR-009). Never trust email sent by the client.
+- `AuthGuard` = `TokenVerifier` (pure) then `UserProvisioner` (creates User, syncs `/userinfo` when never synced or >24 h, ADR-011). Failure rules in ADR-011e are tested in `test/users.e2e-spec.ts` — keep them in sync.
 - Never log tokens.
+
+## Prisma gotchas (measured, not assumed)
+- `upsert` with `update: {}` is **not atomic** (SELECT then INSERT → P2002 under concurrency). Always give `update` at least one field, and cover create-on-first-use paths with a parallel test.
+- A race test needs many rounds or a widened window; one passing round proves nothing.
 
 ## Conventions
 - Status codes / error shape: follow `API_DESIGN.md` (source of truth). If code and doc disagree, stop and flag it.
@@ -49,5 +54,6 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 
 ## Commands
 - DB: `docker compose up -d postgres` (dev DB `bookmarks`, test DB `bookmarks_test`).
-- Backend (in `backend/`): `npm run start:dev` (port 4000) · `npm test` (unit, Vitest) · `npm run test:e2e` · `npm run build` · `npm run lint`.
+- Backend (in `backend/`): `npm run start:dev` (port 4000) · `npm test` (unit, no DB) · `npm run test:e2e` (needs `docker compose up -d postgres`; uses `bookmarks_test`, truncates before each test, files run serially) · `npm run build` · `npm run lint`.
+- Schema changes: `prisma migrate dev` refuses to run non-interactively for some changes; generate SQL with `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script`, review, save as a new migration folder, `npx prisma migrate deploy`.
 - Token inspection (developer logs in): `node scripts/inspect-tokens.mjs`.

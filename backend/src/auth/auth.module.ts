@@ -4,6 +4,8 @@ import { createRemoteJWKSet } from 'jose';
 import { AUTH_CONFIG, loadAuthConfig, type AuthConfig } from './auth.config.js';
 import { AuthGuard } from './auth.guard.js';
 import { JWKS_KEY_SOURCE, TokenVerifier } from './token-verifier.js';
+import { UserProvisioner } from './user-provisioner.js';
+import { UserInfoClient } from './userinfo.client.js';
 
 @Module({
   providers: [
@@ -15,6 +17,8 @@ import { JWKS_KEY_SOURCE, TokenVerifier } from './token-verifier.js';
       inject: [AUTH_CONFIG],
     },
     TokenVerifier,
+    UserInfoClient,
+    UserProvisioner,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })

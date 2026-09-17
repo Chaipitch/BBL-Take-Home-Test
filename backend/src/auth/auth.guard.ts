@@ -11,12 +11,14 @@ import type { Response } from 'express';
 import type { AuthenticatedRequest } from './current-user.decorator.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { InvalidTokenError, KeySourceUnavailableError, TokenVerifier } from './token-verifier.js';
+import { UserProvisioner } from './user-provisioner.js';
 
 // "Bearer" is case-insensitive (RFC 7235 auth-scheme); exactly one space, then a non-empty token.
 const BEARER = /^Bearer ([^\s]+)$/i;
 
 /**
  * Global guard (ADR-010b): every route requires a valid access token unless marked @Public().
+ * After verification it resolves the DB user (ADR-011a) so every handler has `{ id, sub }`.
  * Token is read from the Authorization header only (ADR-010c-1). All auth failures return the same
  * generic 401 body; the specific reason is logged, never the token (ADR-010e).
  */
@@ -27,6 +29,7 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly verifier: TokenVerifier,
+    private readonly provisioner: UserProvisioner,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -47,7 +50,8 @@ export class AuthGuard implements CanActivate {
     }
 
     try {
-      request.principal = await this.verifier.verify(match[1]);
+      const { sub } = await this.verifier.verify(match[1]);
+      request.user = await this.provisioner.resolve(sub, match[1]);
       return true;
     } catch (err) {
       if (err instanceof InvalidTokenError) {

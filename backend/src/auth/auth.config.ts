@@ -1,30 +1,35 @@
-// ADR-010d: issuer, audience and JWKS URL are required configuration. Missing or invalid values
-// stop the app at startup rather than running with verification half-configured.
+// ADR-010d / ADR-011h: issuer, audience, JWKS URL and userinfo URL are required configuration.
+// Missing or invalid values stop the app at startup rather than running half-configured.
 
 export interface AuthConfig {
   issuer: string;
   audience: string;
   jwksUri: URL;
+  userinfoUri: URL;
 }
 
 export const AUTH_CONFIG = Symbol('AUTH_CONFIG');
 
+const REQUIRED = ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_JWKS_URI', 'AUTH_USERINFO_URI'] as const;
+
+function parseUrl(env: NodeJS.ProcessEnv, key: (typeof REQUIRED)[number]): URL {
+  try {
+    return new URL(env[key]!.trim());
+  } catch {
+    throw new Error(`${key} is not a valid URL`);
+  }
+}
+
 export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
-  const missing = ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_JWKS_URI'].filter((key) => !env[key]?.trim());
+  const missing = REQUIRED.filter((key) => !env[key]?.trim());
   if (missing.length > 0) {
     throw new Error(`Missing required auth configuration: ${missing.join(', ')}`);
-  }
-
-  let jwksUri: URL;
-  try {
-    jwksUri = new URL(env.AUTH_JWKS_URI!.trim());
-  } catch {
-    throw new Error('AUTH_JWKS_URI is not a valid URL');
   }
 
   return {
     issuer: env.AUTH_ISSUER!.trim(),
     audience: env.AUTH_AUDIENCE!.trim(),
-    jwksUri,
+    jwksUri: parseUrl(env, 'AUTH_JWKS_URI'),
+    userinfoUri: parseUrl(env, 'AUTH_USERINFO_URI'),
   };
 }

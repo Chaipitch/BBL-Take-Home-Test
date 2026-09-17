@@ -28,7 +28,7 @@ Short ADRs for calls the brief left open.
 | 008 | API accepts the **access token** as Bearer | Accepted — confirmed by token inspection | Developer (agent recommendation) |
 | 009 | Email/email_verified from `/userinfo`, stored, refreshed every 24h | Accepted | Developer (agent recommendation) |
 | 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
-| 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted | Developer (agent recommendations; chose no backoff in 011e) |
+| 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
 
 ---
 
@@ -258,3 +258,10 @@ Concurrency after 24 h: several parallel requests may each call `/userinfo` once
   - B. Wrap each test in a transaction and roll back — fast, but the request handling runs its own connection, so hard to make work through HTTP.
   - C. Unique random `sub` per test, never clean — no isolation guarantees.
 - Planned tests: first request creates user + syncs; second request within 24 h doesn't call `/userinfo`; after 24 h it does; parallel first requests create exactly one row; each failure case in 011e; email lower-cased; picture not stored; `/me` shape; `/me` without token → 401.
+
+### Implementation notes (found while building ADR-011)
+- **Prisma `upsert` is only atomic when `update` is non-empty.** 011c assumed a native `INSERT … ON CONFLICT`. The e2e test "parallel first requests while /userinfo is down" failed (9 of 10 requests → 500). A probe over 200 parallel upserts per variant against Postgres showed: `update: {}` → Prisma issues `SELECT` then `INSERT`, **171/200 failed** with `P2002`; any non-empty `update` → single `INSERT … ON CONFLICT`, **0/200 failed**. The first-sign-in-without-profile path now uses a same-value update (`update: { auth0Sub: sub }`). Restoring `update: {}` makes the test fail again. An earlier single-round probe had shown "10 ok" by luck — one round is not evidence for a race.
+- **Mutation-checked** provisioner rules (each change made the e2e suite fail): no 24 h cache, never refresh, no sub-mismatch check, `/userinfo` 401 treated as outage, stale failure overwriting the profile, email not lower-cased.
+- **Test DB safety:** e2e setup refuses to run unless the database name is `bookmarks_test` (checked in global setup and before every truncate). Vitest `globalSetup` runs in the main process where `test.env` isn't applied, so the test URL is a shared constant.
+- `picture`, `nickname` etc. are not stored because the `User` model has no columns for them; `toProfile` only maps email, email_verified, name.
+- **Verified manually:** built app starts against the dev DB and maps `GET /` and `GET /me`; `/me` without token → 401; missing `DATABASE_URL` or `AUTH_USERINFO_URI` → app refuses to start. Not yet verified with a real Auth0 login.
