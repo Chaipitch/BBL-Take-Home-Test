@@ -27,7 +27,7 @@ Short ADRs for calls the brief left open.
 | 007 | Schema details; duplicate collection names allowed with UI warning | Accepted | Developer |
 | 008 | API accepts the **access token** as Bearer | Accepted — confirmed by token inspection | Developer (agent recommendation) |
 | 009 | Email/email_verified from `/userinfo`, stored, refreshed every 24h | Accepted | Developer (agent recommendation) |
-| 010 | API authentication guard (library, scope, checks, JWKS, errors) | **Proposed** — awaiting developer | — |
+| 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
 
 ---
 
@@ -129,7 +129,7 @@ Short ADRs for calls the brief left open.
 **Open detail (decide in BBL-11).** Behaviour when `/userinfo` fails: on first sign-in (no stored profile) vs on a stale refresh (profile exists).
 
 ## ADR-010 — API authentication guard (BBL-10)
-**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Status.** Accepted — developer, 2026-09-17 (all recommendations below). Implemented in `backend/src/auth/`.
 **Context.** Every route must require OIDC auth (brief §3.1). The API accepts the Auth0 access token (ADR-008). Observed (BBL-9): RS256 JWT, `kid` header, `typ: JWT`, `iss = https://dev-yg.us.auth0.com/`, `aud` is an **array** containing `https://bbl-candidate-test-api`, lifetime 2 h. JWKS has 2 RS256 keys. The on-site includes a live security review of this code.
 
 ### 010a — Verification library
@@ -182,3 +182,10 @@ Guard attaches a minimal typed principal `{ sub, scope }` to the request, expose
 
 ### Tests that would prove it (for BBL-18)
 No token → 401 · non-Bearer scheme → 401 · garbage token → 401 · `alg: none` → 401 · HS256 signed with the RSA public key → 401 · valid signature but wrong `iss` → 401 · ID token (`aud` = client id) → 401 · expired beyond tolerance → 401 · `nbf` in future → 401 · unknown `kid` → 401 · missing `sub` → 401 · token in query string only → 401 · valid access token → 200 · every registered route without token → 401.
+
+### Implementation notes (found while building ADR-010)
+- **Outage vs bad token needs explicit error codes.** jose throws a *generic* `JOSEError` (`ERR_JOSE_GENERIC`) when the JWKS endpoint returns non-200 or bad JSON, a `JWKSTimeout` on timeout, and a raw `TypeError` on network failure. Treating "any jose error" as 401 would report an Auth0 outage as an invalid token. `TokenVerifier` classifies by an allow-list of token-error codes → 401, key-source codes/`TypeError` → 503, anything else rethrown (500, still denied). Verified manually (unreachable host and a 404 JWKS URL both → 503) and by tests.
+- **jose already blocks `alg: none` and HS256-vs-RSA-key confusion on its own** (it never supports `none`, and only matches JWKS keys whose type/declared `alg` fit the header). Mutation testing showed removing our RS256 pin broke no test. The pin still matters when a JWKS key doesn't declare `alg`: a PS256 signature from the genuine RSA key (the tenant advertises PS256) would verify. A dedicated test covers that case and fails if the pin is removed or widened.
+- **`exp` is not required by jose by default** → `requiredClaims: ['sub', 'exp']`.
+- **Configuration** loads `backend/.env` via Node's built-in `process.loadEnvFile` (no new dependency); real environment variables take precedence.
+- **401 body** is Nest's default `{"message":"Unauthorized","statusCode":401}` until the error shape is decided in BBL-12.

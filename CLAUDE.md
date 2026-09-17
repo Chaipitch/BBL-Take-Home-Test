@@ -32,8 +32,11 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 
 ## Auth rules
 - Bearer credential is the Auth0 **access token** for audience `https://bbl-candidate-test-api` (ADR-008), confirmed by token inspection (BBL-9). Never accept ID tokens as API credentials.
-- *(provisional — not yet decided, BBL-10)* JWT verification: `algorithms: ['RS256']` pinned; verify `iss` exactly (`https://dev-yg.us.auth0.com/`, trailing slash), `aud`, `exp`/`nbf`; keys from JWKS selected by `kid`. See `docs/auth0/TENANT_FINDINGS.md`.
-- *(provisional — not yet decided, BBL-10)* Auth guard is global (deny by default). Public routes, if any, must be explicitly opted out and listed in `API_DESIGN.md`.
+- JWT verification lives only in `backend/src/auth/token-verifier.ts` (jose, ADR-010): `algorithms: ['RS256']`, exact `iss`, `aud` contains the API audience, `requiredClaims: ['sub','exp']`, 5 s clock tolerance, remote JWKS with jose defaults. Don't add a second verification path.
+- Error classification is by explicit jose error code: token errors → 401 (`WWW-Authenticate: Bearer error="invalid_token"`), JWKS unavailable (`ERR_JWKS_TIMEOUT`, `ERR_JOSE_GENERIC`, `ERR_JWKS_INVALID`, fetch `TypeError`) → 503. Never map all jose errors to 401.
+- `AuthGuard` is global (`APP_GUARD`), deny by default. `@Public()` exists but no route may use it without a developer decision; list any in `API_DESIGN.md`. Controllers get identity only via `@CurrentUser()` → `{ sub, scope }`.
+- Config: `AUTH_ISSUER`, `AUTH_AUDIENCE`, `AUTH_JWKS_URI` are required; app refuses to start without them.
+- Auth test rule: tests sign tokens with local keys through the real `AuthModule` (override only `AUTH_CONFIG` and `JWKS_KEY_SOURCE`). Build test token payloads as one object — `SignJWT` setters (`setIssuer`, `setAudience`, `setExpirationTime`…) overwrite claims passed to the constructor. After adding a negative test, prove it fails when the check it guards is removed.
 - Observed token facts (BBL-9): access token is RS256 JWT, `aud` is an **array** (check it *contains* the API audience), no email claims, 2 h lifetime, no refresh token.
 - Email/email_verified come only from Auth0 `/userinfo` (called server-side with the verified access token), stored on `User`, refreshed when older than 24 h (ADR-009). Never trust email sent by the client.
 - Never log tokens.
@@ -46,4 +49,5 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 
 ## Commands
 - DB: `docker compose up -d postgres` (dev DB `bookmarks`, test DB `bookmarks_test`).
-- (backend/frontend commands added once scaffolded)
+- Backend (in `backend/`): `npm run start:dev` (port 4000) · `npm test` (unit, Vitest) · `npm run test:e2e` · `npm run build` · `npm run lint`.
+- Token inspection (developer logs in): `node scripts/inspect-tokens.mjs`.
