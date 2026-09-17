@@ -36,6 +36,7 @@ Short ADRs for calls the brief left open.
 | 016 | Seed data (BBL-16) | Accepted — pre-approved | same |
 | 017 | Route-wide authentication sweep test (BBL-18) | Accepted — pre-approved | same |
 | 018 | Frontend architecture: scaffold, routing, auth, data, UI flows, tests (BBL-19–22) | Accepted | Developer (all agent recommendations) |
+| 019 | Sharing UI: share/revoke and shared-with-me pages (BBL-23) | **Proposed** — awaiting developer | — |
 
 ---
 
@@ -703,3 +704,48 @@ MUI 9 with `CssBaseline`, default theme plus a small palette, Emotion (MUI's def
 - **Mutation checks (11):** always `confirm=true`; ignoring the 409; `contains` instead of exact duplicate match; skipping the duplicate check; any URL scheme as link; `collectionId` not written to the URL; select coercion (caught after the test fix); `returnTo` without query; token without audience; 401 not redirecting; logout without `returnTo`. All caught.
 - **Real-login checklist passed (developer, 2026-09-17)** — `docs/FRONTEND_MANUAL_TESTING.md` sections A–E: PKCE authorize parameters, code exchange, Bearer access token, no tokens in browser storage, collections/bookmarks page actions from the brief, delete-with-count and duplicate flows, filters in URL, `javascript:` URL rejected, UI privacy smoke tests with seed ids, logout.
 - **ADR-018d reload outcome (observed):** reloading a page **stays signed in** without a visible redirect, so the SDK's silent renewal (hidden iframe, `prompt=none`) works on this tenant from `http://localhost:3000`. Tokens remain in memory only. Caveat: this depends on the browser allowing Auth0's cookie in that iframe; a browser that blocks third-party cookies would fall back to a quick redirect through Auth0 (already handled by `RequireAuth`).
+
+## ADR-019 — Sharing UI (BBL-23)
+**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Inputs.** API from ADR-015 (`/collections/:id/shares`, `/shared/collections`…); recipient data has `ownerEmail`, `sharedAt`, no `ownerId`; recipients are read-only (ADR-006f); patterns from ADR-018 (routes as pages, TanStack Query hooks, dialogs mounted only while open, components under `src/components/<area>/`).
+**Brief check.** §3.3 leaves sharing to us; the two required pages are unchanged.
+
+### 019a — Where recipients find shared collections
+| Option | Notes |
+|---|---|
+| **A. New nav item "Shared with me" → `/shared` (list) and `/shared/:id` (collection + bookmarks)** | Mirrors the API split: owner pages never mix in shared data, just as owner routes never consult shares (ADR-006d). |
+| B. Section at the bottom of `/collections` | Fewer pages, but mixes owned and read-only items on a page whose actions (delete, rename) don't apply to them. |
+**Recommendation: A.**
+
+### 019b — Where owners manage sharing
+| Option | Notes |
+|---|---|
+| **A. "Share" button on `/collections/:id` → dialog: email field + list of current shares (email, date, revoke)** | Sharing happens in the context of one collection; no new route. |
+| B. Separate page `/collections/:id/shares` | Linkable, but a whole page for one field and a short list. |
+**Recommendation: A.** The share list inside the dialog uses the paginated API with "Load more".
+
+### 019c — Messages for share errors
+| API response | UI message |
+|---|---|
+| `400` field `email` (invalid) | field error under the email input |
+| `400` "cannot share a collection with yourself" | field error: "You can't share a collection with yourself." |
+| `404 recipient_not_found` | "No account with a verified email matches this address." (enumeration accepted, ADR-006c) |
+| `409 already_shared` | "This collection is already shared with that person." |
+| `409 ambiguous_recipient` | "More than one account uses this email, so it wasn't shared." |
+| other | generic error text (never raw details) |
+**Recommendation:** as above.
+
+### 019d — Revoking
+**A. Confirmation dialog ("Stop sharing with x@y? They lose access immediately.") (recommended)** vs B. immediate revoke with no confirmation.
+
+### 019e — Read-only presentation for recipients
+- `/shared`: collection name, "Shared by `ownerEmail`" (or "Shared by unknown owner" if null), shared date. No rename/delete.
+- `/shared/:id`: name, owner email, a **"Read-only"** chip, bookmarks with title, safe URL link and **notes shown inline**. No edit/delete/add buttons, and titles don't link to `/bookmarks/:id` (that owner route would 404 for a recipient). Title search `q` available.
+- A collection that isn't shared with you (or was revoked): "Not found. It may have been deleted, or it's no longer shared with you."
+**Recommendation:** as above.
+
+### 019f — Components
+`src/components/shares/ShareDialog.tsx` (owner), `src/components/shared/SharedCollectionList.tsx`, `SharedBookmarkList.tsx` (recipient); pages `SharedCollectionsPage`, `SharedCollectionPage`; hooks `src/api/shares.ts`, `src/api/shared.ts`.
+
+### 019g — Tests (MSW + mocked Auth0)
+Share success clears the input and lists the share with a lower-cased email; each 019c error mapping; revoke asks for confirmation and removes the row; `/shared` shows the owner email and **no** rename/delete buttons; `/shared/:id` shows notes and the Read-only chip, **no** edit/delete/add buttons and no links to `/bookmarks/:id`; unsafe URL still text-only; not-shared → 404 message; nav contains "Shared with me". Mutation-check afterwards. Manual checklist additions for a real login (seed: B shares "Team reading list" with the candidate).
