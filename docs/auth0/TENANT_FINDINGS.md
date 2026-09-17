@@ -58,3 +58,17 @@ Obtained with `scripts/inspect-tokens.mjs` (Authorization Code + PKCE S256, `aud
 4. **No email in the access token** → email/email_verified must come from `/userinfo` (ADR-009).
 5. **No refresh token; access token lives 2 h** → frontend expiry handling to be decided (BBL-20).
 6. **`user_id: 1` custom claim** is tenant-specific and undocumented → not used; identity is `sub`.
+
+---
+
+## Real tokens against the running API — 2026-09-17 (BBL-10 verification)
+
+`node scripts/inspect-tokens.mjs --api http://localhost:4000/` with the API built from commit `3c07c29`. Developer performed the login. A second login produced tokens with the same shape as above (RS256, `kid tOu0FHcN3C2etrel4Qhaz`, access-token `aud` array incl. the API, ID-token `aud` = client id).
+
+| Probe `GET /` | Status | `WWW-Authenticate` | API log reason |
+|---|---|---|---|
+| Real access token | 200 | — | — |
+| Real ID token | 401 | `Bearer error="invalid_token"` | `ERR_JWT_CLAIM_VALIDATION_FAILED` (audience) |
+| No token | 401 | `Bearer` | `no authorization header` |
+
+No JWT-shaped strings found in the API log or script output.
