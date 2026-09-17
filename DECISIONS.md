@@ -30,7 +30,7 @@ Short ADRs for calls the brief left open.
 | 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
 | 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
 | 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | Accepted — contract in `API_DESIGN.md` | Developer (agent recommendations; 012g follow the brief; `?q=` on title) |
-| 013 | Collections implementation design + shared API plumbing (BBL-13) | **Proposed** — awaiting developer | — |
+| 013 | Collections implementation design + shared API plumbing (BBL-13) | Accepted | Developer (all agent recommendations, incl. wider delete race and 413) |
 
 ---
 
@@ -369,7 +369,7 @@ A bookmark added between the `409` and the confirmed retry is deleted too.
 - OpenAPI/Swagger: **skip** (contract written by hand in `API_DESIGN.md`) or add `@nestjs/swagger` 12.0.1?
 
 ## ADR-013 — Implementation design for `/collections` and shared API plumbing (BBL-13)
-**Status.** **Proposed** — awaiting developer decision. Nothing implemented. Implements the contract in `API_DESIGN.md` (ADR-012); only *how*, not *what*, except 013e which may amend the contract.
+**Status.** Accepted — developer, 2026-09-17: all recommendations, including 013d (sequential delete; the race also covers unconfirmed deletes, documented) and 013e (contract amended with `413 payload_too_large`).
 
 ### Facts checked before proposing (2026-09-17)
 1. **Nest 12 `StandardSchemaValidationPipe` silently skips validation when a parameter has no schema** (`if (!schema) return value` in its source). A plain `@Body()` compiles and accepts anything. Schemas attach via `@Body({ schema })` / `@Query({ schema })`.

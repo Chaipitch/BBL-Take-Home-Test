@@ -59,6 +59,7 @@ Validation errors add a field list:
 | 401 | `unauthorized` | Missing/invalid token. **Identical body for every cause**; `WWW-Authenticate: Bearer` (+ `error="invalid_token"` when a token was sent) [010e] |
 | 404 | `not_found` | Resource doesn't exist, **belongs to someone else**, or the path id isn't a UUID — **identical response in all three cases** [004a] |
 | 409 | `collection_not_empty` | `DELETE /collections/:id` on a non-empty collection without `?confirm=true`; body adds `"bookmarkCount": <n>` [005b] |
+| 413 | `payload_too_large` | Request body larger than 100 KB [013e] |
 | 500 | `internal_error` | Unexpected failure; no internal details in the body |
 | 503 | `service_unavailable` | Token signing keys unavailable [010e] |
 
@@ -139,7 +140,7 @@ The user row is created and its profile synced from Auth0 `/userinfo` inside the
 | `DELETE /collections/:id` | — ; query `confirm=true` | `204` | 404; `409 collection_not_empty` + `bookmarkCount` if it has bookmarks and `confirm` is absent; `400` if `confirm` has any value other than `true` |
 | `GET /collections/:id/bookmarks` | — ; query `limit`, `cursor`, `q` | `200` list of Bookmark | 400 (query), 404 (collection) [012j] |
 
-Known and accepted: a bookmark added between a `409` and the confirmed retry is deleted too [012l].
+Known and accepted races [012l, 013d]: delete runs as *find → count → delete*. A bookmark added between a `409` and the confirmed retry is deleted too; and a bookmark added in the milliseconds between the count (0) and the delete is deleted even though `confirm` was not sent.
 
 ### Bookmarks — BBL-14
 
