@@ -136,7 +136,7 @@ The user row is created and its profile synced from Auth0 `/userinfo` inside the
 | `GET /collections/:id` | — | `200` Collection | 404 |
 | `PUT /collections/:id` | `{ name }` | `200` Collection | 400, 404 |
 | `PATCH /collections/:id` | `{ name? }` (≥ 1 field) | `200` Collection | 400, 404 |
-| `DELETE /collections/:id` | — ; query `confirm=true` | `204` | 404; `409 collection_not_empty` + `bookmarkCount` if it has bookmarks and `confirm` isn't `true` |
+| `DELETE /collections/:id` | — ; query `confirm=true` | `204` | 404; `409 collection_not_empty` + `bookmarkCount` if it has bookmarks and `confirm` is absent; `400` if `confirm` has any value other than `true` |
 | `GET /collections/:id/bookmarks` | — ; query `limit`, `cursor`, `q` | `200` list of Bookmark | 400 (query), 404 (collection) [012j] |
 
 Known and accepted: a bookmark added between a `409` and the confirmed retry is deleted too [012l].
