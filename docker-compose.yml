@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: bbl-bookmarks-postgres
+    environment:
+      POSTGRES_USER: bookmarks
+      POSTGRES_PASSWORD: bookmarks
+      POSTGRES_DB: bookmarks
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the separate test database used by the e2e suite.
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookmarks -d bookmarks"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
