@@ -28,7 +28,7 @@ Short ADRs for calls the brief left open.
 | 008 | API accepts the **access token** as Bearer | Accepted — confirmed by token inspection | Developer (agent recommendation) |
 | 009 | Email/email_verified from `/userinfo`, stored, refreshed every 24h | Accepted | Developer (agent recommendation) |
 | 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
-| 011 | User provisioning, `/userinfo` sync, `GET /me` | **Proposed** — awaiting developer | — |
+| 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted | Developer (agent recommendations; chose no backoff in 011e) |
 
 ---
 
@@ -179,6 +179,7 @@ Recommended checks (each is a question — accept/reject individually):
 Body shape follows the API error format decided in BBL-12.
 
 ### 010f — What the guard produces
+> **Amended by ADR-011a/b:** the guard now also resolves the DB user after verification, and `@CurrentUser()` returns `{ id, sub }` (no `scope`). `TokenVerifier` itself is unchanged and still pure.
 Guard attaches a minimal typed principal `{ sub, scope }` to the request, exposed via a `@CurrentUser()` parameter decorator. User provisioning / `/userinfo` sync (ADR-009) is **not** in the guard — it's BBL-11, so token verification stays a pure, separately testable step.
 
 ### Tests that would prove it (for BBL-18)
@@ -193,7 +194,7 @@ No token → 401 · non-Bearer scheme → 401 · garbage token → 401 · `alg: 
 - **401 body** is Nest's default `{"message":"Unauthorized","statusCode":401}` until the error shape is decided in BBL-12.
 
 ## ADR-011 — User provisioning, profile sync, and `GET /me` (BBL-11)
-**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Status.** Accepted — developer, 2026-09-17. All recommendations below, and for the retry storm (011e) **3 s timeout, no backoff**.
 **Already decided (inputs).** ADR-007: a `User` row keyed by Auth0 `sub`, created on the first authenticated request. ADR-009: `email`, `emailVerified`, `name` come from Auth0 `/userinfo` (server-side, caller's verified access token) on first sign-in and when older than 24 h. ADR-010f: `TokenVerifier` stays a pure verification step; controllers get identity via `@CurrentUser()`.
 **Current schema.** `User(id uuid, auth0Sub unique, email?, emailVerified=false, name?, createdAt, updatedAt)`. No sync timestamp yet.
 
@@ -228,7 +229,7 @@ Concurrency after 24 h: several parallel requests may each call `/userinfo` once
 | **Stale refresh** fails | (1) Keep stored values, don't bump `profileSyncedAt`, log warning, continue. (2) Set `emailVerified=false` until refresh succeeds (fail closed for sharing). | **(1)** — availability; the sharing risk window is "an email that stopped being verified during an Auth0 outage". Mention (2) as hardening. |
 | `/userinfo` returns **401** for a token our guard accepted | (1) 401 `invalid_token` (Auth0 considers the session invalid). (2) Treat as outage. | **(1)** |
 | `/userinfo` `sub` ≠ token `sub` | Should never happen. | **Reject → 401, log error.** |
-| **Retry storm** while Auth0 is down and user never synced | Every request retries with a timeout → slow requests. | **3 s timeout** on the call; and don't retry for the same user more than once per **60 s** (`profileSyncAttemptedAt`, or in-memory). Needs your call: accept extra column, in-memory, or no backoff. |
+| **Retry storm** while Auth0 is down and user never synced | Every request retries with a timeout → slow requests. Options were: 60 s backoff via extra column, in-memory backoff, or no backoff. | **Decided: 3 s timeout, no backoff.** Trade-off accepted: during an Auth0 outage a never-synced user's requests may each wait up to 3 s. |
 
 ### 011f — What is stored
 - `email`: **trimmed and lower-cased** so sharing lookups (ADR-006a) are case-insensitive. Alternative: store as returned and compare case-insensitively in queries.
