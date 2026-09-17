@@ -27,6 +27,7 @@ Short ADRs for calls the brief left open.
 | 007 | Schema details; duplicate collection names allowed with UI warning | Accepted | Developer |
 | 008 | API accepts the **access token** as Bearer | Accepted — confirmed by token inspection | Developer (agent recommendation) |
 | 009 | Email/email_verified from `/userinfo`, stored, refreshed every 24h | Accepted | Developer (agent recommendation) |
+| 010 | API authentication guard (library, scope, checks, JWKS, errors) | **Proposed** — awaiting developer | — |
 
 ---
 
@@ -126,3 +127,58 @@ Short ADRs for calls the brief left open.
 - Adds a dependency on Auth0 availability at first sign-in and at each 24 h refresh.
 - Requires a sync timestamp on `User` (schema change, implemented with BBL-11).
 **Open detail (decide in BBL-11).** Behaviour when `/userinfo` fails: on first sign-in (no stored profile) vs on a stale refresh (profile exists).
+
+## ADR-010 — API authentication guard (BBL-10)
+**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Context.** Every route must require OIDC auth (brief §3.1). The API accepts the Auth0 access token (ADR-008). Observed (BBL-9): RS256 JWT, `kid` header, `typ: JWT`, `iss = https://dev-yg.us.auth0.com/`, `aud` is an **array** containing `https://bbl-candidate-test-api`, lifetime 2 h. JWKS has 2 RS256 keys. The on-site includes a live security review of this code.
+
+### 010a — Verification library
+| Option | Notes |
+|---|---|
+| **A. `jose` 6.2.12** | Zero dependencies, actively maintained (2026-09). One call `jwtVerify(token, JWKS, { algorithms, issuer, audience, clockTolerance })`. `createRemoteJWKSet` handles fetch, cache, and `kid` rotation. Audience check accepts an array `aud` (verified in source). Small surface → easy to explain line by line. |
+| B. `@nestjs/passport` + `passport-jwt` + `jwks-rsa` | Common Nest tutorial path. Three packages + passport; `passport-jwt` last released 2025-01 and wraps `jsonwebtoken`. More indirection (strategy, `validate()`, `AuthGuard('jwt')`) to explain. |
+| C. `express-oauth2-jwt-bearer` (Auth0) | Auth0's official Express middleware, but depends on old `jose` 4 and is Express middleware, not a Nest guard. |
+| D. `@nestjs/jwt` | Built for secrets/static keys; no JWKS fetching — would need custom key lookup. |
+**Recommendation: A.**
+
+### 010b — Where the guard applies
+| Option | Notes |
+|---|---|
+| **A. Global guard (`APP_GUARD`), deny by default** | Every route, including ones added later, is protected unless explicitly marked `@Public()`. Forgetting a decorator fails *closed*. |
+| B. `@UseGuards` per controller | Explicit, but a new controller without it is silently public — fails *open*. |
+| C. Express middleware | Runs before Nest routing; loses Nest metadata (no clean `@Public()`), less idiomatic. |
+**Recommendation: A**, with **no public routes planned** (not even a health check) unless you decide otherwise; a test would assert every registered route returns 401 without a token.
+
+### 010c — What a valid token must satisfy
+Recommended checks (each is a question — accept/reject individually):
+1. **Transport:** only `Authorization: Bearer <token>` header. Not query string, not cookies.
+2. **Algorithm pinned:** `algorithms: ['RS256']`. Never trust the header `alg` (blocks `none` and HS256 key-confusion).
+3. **Signature:** key selected by `kid` from the tenant JWKS.
+4. **Issuer:** exactly `https://dev-yg.us.auth0.com/` (trailing slash).
+5. **Audience:** `aud` contains `https://bbl-candidate-test-api` — this is what rejects ID tokens (`aud` = client id).
+6. **Time:** `exp` required and not passed; `nbf`/`iat` honoured. **Clock tolerance:** options 0 s / **5 s (recommended)** / 60 s.
+7. **Subject:** `sub` required (it's our user identity key).
+8. **`azp` (authorized party):** *optional check* — require `azp = H9F6QG5SzTKMv0tbmgxLj9LjG1EKVllA` so only tokens obtained through our SPA are accepted. Stricter, but rejects tokens other legitimate clients might obtain for the same API. **Recommendation: skip**, rely on audience; mention as a hardening option.
+9. **Not checked:** `typ` (Auth0 sets `JWT` on both token kinds, so it doesn't distinguish them); `scope`/`permissions` (no per-route permissions in this app).
+
+### 010d — JWKS source and caching
+| Option | Notes |
+|---|---|
+| **A. `createRemoteJWKSet` with jose defaults** | Cache 10 min; on unknown `kid`, refetch at most once per 30 s (limits abuse by tokens with random `kid`s); 5 s fetch timeout. |
+| B. Same, tuned values | e.g. longer cache. No evidence we need it. |
+| C. Static JWKS file committed to repo | No network dependency, but breaks on key rotation. |
+**Recommendation: A.**
+**JWKS URL / issuer / audience configuration:** from environment variables validated at startup (app refuses to start if missing), defaulting nothing. Rationale: BBL-17 (tests) may need to point verification at test keys *while running the same verification code* — the brief asks to keep the real validation path exercised. How tests get tokens is decided in BBL-17, not here.
+
+### 010e — Failure responses
+| Case | Recommended |
+|---|---|
+| Missing header / not `Bearer` / malformed / bad signature / wrong iss / wrong aud / expired | **401**, `WWW-Authenticate: Bearer` (RFC 6750, with `error="invalid_token"` when a token was present), **identical generic body** for all — the reason is logged server-side (never the token), not returned. |
+| JWKS unreachable and no cached key | Options: **503 (recommended)** — honest "can't verify right now", avoids telling the SPA to re-login in a loop — or 401. |
+Body shape follows the API error format decided in BBL-12.
+
+### 010f — What the guard produces
+Guard attaches a minimal typed principal `{ sub, scope }` to the request, exposed via a `@CurrentUser()` parameter decorator. User provisioning / `/userinfo` sync (ADR-009) is **not** in the guard — it's BBL-11, so token verification stays a pure, separately testable step.
+
+### Tests that would prove it (for BBL-18)
+No token → 401 · non-Bearer scheme → 401 · garbage token → 401 · `alg: none` → 401 · HS256 signed with the RSA public key → 401 · valid signature but wrong `iss` → 401 · ID token (`aud` = client id) → 401 · expired beyond tolerance → 401 · `nbf` in future → 401 · unknown `kid` → 401 · missing `sub` → 401 · token in query string only → 401 · valid access token → 200 · every registered route without token → 401.
