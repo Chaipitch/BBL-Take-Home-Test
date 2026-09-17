@@ -28,6 +28,7 @@ Short ADRs for calls the brief left open.
 | 008 | API accepts the **access token** as Bearer | Accepted — confirmed by token inspection | Developer (agent recommendation) |
 | 009 | Email/email_verified from `/userinfo`, stored, refreshed every 24h | Accepted | Developer (agent recommendation) |
 | 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
+| 011 | User provisioning, `/userinfo` sync, `GET /me` | **Proposed** — awaiting developer | — |
 
 ---
 
@@ -190,3 +191,69 @@ No token → 401 · non-Bearer scheme → 401 · garbage token → 401 · `alg: 
 - **Configuration** loads `backend/.env` via Node's built-in `process.loadEnvFile` (no new dependency); real environment variables take precedence.
 - **Verified end to end with real Auth0 tokens (2026-09-17).** Developer logged in via `node scripts/inspect-tokens.mjs --api http://localhost:4000/` against the running API: real access token → `200`; real ID token → `401` (`WWW-Authenticate: Bearer error="invalid_token"`, logged reason `ERR_JWT_CLAIM_VALIDATION_FAILED`, i.e. the audience check); no token → `401` (`Bearer`). API log and script output searched for JWT-shaped strings: none.
 - **401 body** is Nest's default `{"message":"Unauthorized","statusCode":401}` until the error shape is decided in BBL-12.
+
+## ADR-011 — User provisioning, profile sync, and `GET /me` (BBL-11)
+**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Already decided (inputs).** ADR-007: a `User` row keyed by Auth0 `sub`, created on the first authenticated request. ADR-009: `email`, `emailVerified`, `name` come from Auth0 `/userinfo` (server-side, caller's verified access token) on first sign-in and when older than 24 h. ADR-010f: `TokenVerifier` stays a pure verification step; controllers get identity via `@CurrentUser()`.
+**Current schema.** `User(id uuid, auth0Sub unique, email?, emailVerified=false, name?, createdAt, updatedAt)`. No sync timestamp yet.
+
+### 011a — Where provisioning runs
+| Option | Notes |
+|---|---|
+| **A. In `AuthGuard`, after `TokenVerifier` succeeds** | Guard calls `UserProvisioner.resolve(principal, token)` and puts the DB user on the request. Deterministic order, one place, every authenticated route has a user row. `TokenVerifier` remains pure and keeps its own tests. **Amends ADR-010f's wording** ("not in the guard") — the verifier is still separate, but the guard orchestrates both. |
+| B. Global interceptor after the guard | Keeps the guard untouched. Nest always runs guards before interceptors, so order is safe, but auth now spans two classes and two places to skip `@Public()`. |
+| C. Each controller calls `usersService.resolve()` | Explicit, but can be forgotten → a handler without an owner id. Fails open-ish. |
+**Recommendation: A.**
+
+### 011b — What controllers receive
+`@CurrentUser()` returns `{ id, sub }` where **`id` is the `User.id` UUID used as `ownerId` everywhere**. Email/name are not on the request object (fetch via `/me` or the users service when needed, e.g. sharing), so handlers can't accidentally trust a stale or unverified email.
+**Recommendation: `{ id, sub }`.** Alternative: include `email`, `emailVerified` for convenience.
+
+### 011c — Creating the row safely under concurrency
+A new user's SPA may fire several requests at once → two "create" attempts for the same `sub`.
+| Option | Notes |
+|---|---|
+| **A. Prisma `upsert` keyed on `auth0Sub`** | With a single unique field in `where` and no nested writes Prisma issues a native `INSERT … ON CONFLICT`, so parallel first requests can't create duplicates or throw. To be proven with a parallel-request test, not assumed. |
+| B. `findUnique`, then `create`, catch unique violation (`P2002`) and re-read | Works, more code paths to test. |
+**Recommendation: A**, with the parallel test.
+
+### 011d — When `/userinfo` is called
+Per ADR-009: user has never synced, or last sync > 24 h ago. **Schema change:** add `profileSyncedAt DateTime?` (null = never synced).
+Concurrency after 24 h: several parallel requests may each call `/userinfo` once. **Recommendation: accept** (rare, bounded per user) rather than add an in-memory single-flight lock (doesn't work across multiple API instances anyway).
+
+### 011e — When `/userinfo` fails
+| Case | Options | Recommendation |
+|---|---|---|
+| **First sign-in**, Auth0 down / timeout / 5xx / 429 | (1) 503, user can't use the app until Auth0 recovers. (2) Create user with no email, `emailVerified=false`, `profileSyncedAt=null`; retry on the next request. | **(2)** — private features don't need email; sharing to this user is impossible until verified, which fails safe. |
+| **Stale refresh** fails | (1) Keep stored values, don't bump `profileSyncedAt`, log warning, continue. (2) Set `emailVerified=false` until refresh succeeds (fail closed for sharing). | **(1)** — availability; the sharing risk window is "an email that stopped being verified during an Auth0 outage". Mention (2) as hardening. |
+| `/userinfo` returns **401** for a token our guard accepted | (1) 401 `invalid_token` (Auth0 considers the session invalid). (2) Treat as outage. | **(1)** |
+| `/userinfo` `sub` ≠ token `sub` | Should never happen. | **Reject → 401, log error.** |
+| **Retry storm** while Auth0 is down and user never synced | Every request retries with a timeout → slow requests. | **3 s timeout** on the call; and don't retry for the same user more than once per **60 s** (`profileSyncAttemptedAt`, or in-memory). Needs your call: accept extra column, in-memory, or no backoff. |
+
+### 011f — What is stored
+- `email`: **trimmed and lower-cased** so sharing lookups (ADR-006a) are case-insensitive. Alternative: store as returned and compare case-insensitively in queries.
+- `emailVerified`: `email_verified === true` only (missing → false).
+- `name`: as returned.
+- **Not stored:** `picture`, `nickname`, `updated_at`, anything else (data minimisation).
+- If Auth0 returns no email → store `null`, `emailVerified=false`.
+
+### 011g — `GET /me` response
+| Option | Body |
+|---|---|
+| **A** | `{ id, email, emailVerified, name }` |
+| B | A + `createdAt` |
+| C | A + Auth0 `sub` |
+**Recommendation: A.** `sub` is an external identifier the SPA doesn't need; `id` is the user's own id (not another user's), so exposing it is fine. Status `200`. No token → `401` (guard). Does not force a `/userinfo` refresh — same 24 h rule as every route.
+
+### 011h — Configuration and HTTP client
+- `AUTH_USERINFO_URI` as a **required env var** (consistent with ADR-010d; tests point it at a fake). Alternative: derive `issuer + "userinfo"`.
+- Built-in `fetch` with `AbortSignal.timeout(3000)`. No new dependency.
+- Prisma: a `PrismaService` using `@prisma/adapter-pg` with required `DATABASE_URL`; app refuses to start without it.
+
+### 011i — How it's tested (needs a DB, overlaps BBL-17)
+- `UserInfoClient` is an injectable provider → tests override it with a fake (success, timeout, 401, 5xx, sub mismatch).
+- DB tests run against `bookmarks_test`. **Decision needed now (pulls part of BBL-17 forward):** reset strategy.
+  - **A. `prisma migrate deploy` once, then `TRUNCATE` all tables before each test; test files run serially.** Simple, realistic (real commits, real constraints). *Recommended.*
+  - B. Wrap each test in a transaction and roll back — fast, but the request handling runs its own connection, so hard to make work through HTTP.
+  - C. Unique random `sub` per test, never clean — no isolation guarantees.
+- Planned tests: first request creates user + syncs; second request within 24 h doesn't call `/userinfo`; after 24 h it does; parallel first requests create exactly one row; each failure case in 011e; email lower-cased; picture not stored; `/me` shape; `/me` without token → 401.
