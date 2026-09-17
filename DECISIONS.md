@@ -32,6 +32,9 @@ Short ADRs for calls the brief left open.
 | 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | Accepted — contract in `API_DESIGN.md` | Developer (agent recommendations; 012g follow the brief; `?q=` on title) |
 | 013 | Collections implementation design + shared API plumbing (BBL-13) | Accepted — implemented | Developer (all agent recommendations, incl. wider delete race and 413) |
 | 014 | Bookmarks implementation design (BBL-14) | Accepted — implemented | Developer (all agent recommendations) |
+| 015 | Sharing routes and behaviour (BBL-15) | Accepted — pre-approved | Developer pre-approved agent recommendations for remaining backend work |
+| 016 | Seed data (BBL-16) | Accepted — pre-approved | same |
+| 017 | Route-wide authentication sweep test (BBL-18) | Accepted — pre-approved | same |
 
 ---
 
@@ -520,3 +523,62 @@ When the body sets a non-null `collectionId`:
 - **All 120 e2e + 64 unit tests passed on the first run**, so mutation checks were run before trusting them. Caught: removing `ownerId` from get/replace/patch/delete/list; `collectionId=none` ignored; PUT not nulling omitted fields; empty notes not nulled; **plain `z.url()` (6 failures)**; FK mapping removed or not checking the constraint name (unit tests).
 - **Equivalent mutant, as predicted in 014c:** removing the app-level collection check changes no API response, because the composite FK raises `P2003`, which maps to the same 400. To show this is two real layers rather than one dead check, both were removed together → 3 e2e tests fail (the database still refused the cross-owner write; it surfaced as 500).
 - `bookmarkSelect` moved to `src/bookmarks/bookmark.select.ts`, shared with the collections nested list.
+
+---
+
+> **Pre-approval (developer, 2026-09-17):** "let's finish up the backend, we can go with your recommendations. I will review the result once we are able to test full backend." ADR-015–017 below were therefore written as proposals with a recommendation and implemented without a separate decision round. Each lists the alternatives so the developer can overturn any of them during review. Every option was checked against the brief first.
+
+## ADR-015 — Sharing: routes and behaviour (BBL-15)
+**Status.** Accepted — pre-approved agent recommendation.
+**Inputs (accepted earlier).** ADR-006a–g: read-only share to an existing user with a verified email, named by email, stored by user id; unknown/unverified → 404 (enumeration accepted); self-share → 400; recipients read only under `/shared/...`; owner routes never consult shares; recipients see name, bookmarks (incl. notes) and owner email, never other users' internal ids or other recipients.
+**Brief check.** The brief's §3.3 leaves sharing open and defines resource shapes only for `/collections` and `/bookmarks`; those routes and shapes are unchanged. Shared routes are an extension.
+
+### 015a — Routes
+| Method & path | Who | Result |
+|---|---|---|
+| `POST /collections/:id/shares` `{ email }` | owner | `201` Share + `Location` |
+| `GET /collections/:id/shares` | owner | `200` list of Share (cursor pagination) |
+| `DELETE /collections/:id/shares/:shareId` | owner | `204` |
+| `GET /shared/collections` | recipient | `200` list of SharedCollection |
+| `GET /shared/collections/:id` | recipient | `200` SharedCollection |
+| `GET /shared/collections/:id/bookmarks` | recipient | `200` list of SharedBookmark (`q`, cursor) |
+*Alternatives considered:* share management under `/shares` (top-level) — rejected: shares only exist inside a collection, and nesting keeps the owner check identical to other collection routes.
+
+### 015b — Response shapes
+- **Share** (owner view): `{ id, collectionId, email, createdAt }` — `email` is the recipient's current stored email (the owner typed it). No recipient user id.
+- **SharedCollection** (recipient view): `{ id, name, ownerEmail, sharedAt, createdAt, updatedAt }` — **no `ownerId`** (ADR-006e: never other users' internal ids). `ownerEmail` may be `null` if the owner's profile was never synced.
+- **SharedBookmark**: `{ id, url, title, notes, collectionId, createdAt, updatedAt }` — **no `ownerId`**.
+*Alternative:* reuse the brief's Collection/Bookmark shapes including `ownerId` — rejected because it contradicts accepted ADR-006e; the brief's shapes still apply unchanged to the owner routes.
+
+### 015c — Status codes and rules
+| Situation | Response |
+|---|---|
+| Collection doesn't exist / not the caller's / malformed id (owner routes) | `404 not_found` (checked **first**, before looking at the email) |
+| `email` missing or not an email | `400 validation_failed` |
+| No user with that email and `emailVerified = true` | `404 recipient_not_found` (ADR-006c) |
+| More than one verified user with that email (possible: `User.email` isn't unique, e.g. two Auth0 connections) | `409 ambiguous_recipient` — fail closed rather than guess *(alternative: share with all matches)* |
+| Recipient is the caller | `400 validation_failed`, field `email`, "cannot share a collection with yourself" |
+| Already shared with that user | `409 already_shared` *(alternative: idempotent `200` with the existing share)* |
+| Revoke a share id that isn't on this collection | `404 not_found` |
+| Recipient route for a collection not shared with the caller (including the caller's **own** collection) | `404 not_found`, identical to random/malformed ids |
+- Email compared **trimmed and lower-cased** (ADR-011f storage).
+- Verification is checked at share time only (ADR-006g); stored emails may be up to 24 h stale (ADR-009).
+- Recipient access is revoked immediately by deleting the share; collection deletion cascades shares.
+- **Read-only is structural:** the shared controller has only `GET` handlers (enforced by a guardrail test), and owner routes never read `CollectionShare`, so a recipient's PUT/PATCH/DELETE on `/collections/:id` or `/bookmarks/:id` is a `404`.
+
+### 015d — Where the exception lives
+`src/shares/` for owner share management (owner-scoped like collections); `src/shared/` for recipient reads — **the only code that grants access via `CollectionShare`**. Every recipient query filters `shares: { some: { granteeUserId: callerId } }`.
+
+### 015e — Tests
+Share create (201, lower-cased match, Location), unknown email / unverified user → 404 `recipient_not_found`, ambiguous → 409, self → 400, duplicate → 409, non-owner (B's collection) → 404 before email lookup; list/revoke owner-only; recipient list/get/bookmarks; not-shared and own collection on `/shared` → identical 404; recipient cannot PUT/PATCH/DELETE the owner's collection or bookmarks (404) nor re-share (404); revoke removes access; deleting collection removes access; no `ownerId`/grantee ids in shared responses; guardrail: shared controller GET-only. Mutation checks on the grantee filter.
+
+## ADR-016 — Seed data (BBL-16)
+**Status.** Accepted — pre-approved agent recommendation. **Brief:** "Seed data for at least two distinct users."
+- **Users:** the real Auth0 test user (`auth0|62e089faea483987422db6cc`, `candidate@test.com`, verified — observed in BBL-9) so logging in shows data; plus two seed-only users `seed|user-b` (`user-b@example.com`) and `seed|user-c` (`user-c@example.com`), both verified. *(Alternative: only fake users — the real login would see an empty app.)*
+- **Data:** each user gets collections with bookmarks plus uncategorised bookmarks; `user-b` shares one collection with the test user, the test user shares one with `user-b`, so both sharing views have data.
+- **Idempotent and non-destructive:** seed-only users are recreated from scratch each run; the real test user's data is added **only if that user has no collections yet**, so re-seeding never deletes what was created manually. *(Alternative: wipe everything — rejected, destroys manual testing data.)*
+- **Run:** `npx prisma db seed` (configured in `prisma.config.ts`, `tsx prisma/seed.ts`). The seed logic is an exported function, tested twice in a row against the test DB.
+
+## ADR-017 — Route-wide authentication sweep (BBL-18)
+**Status.** Accepted — pre-approved agent recommendation.
+A test enumerates every registered route (controllers via Nest's `DiscoveryService`, paths and methods from route metadata), calls each without a token and expects `401`. New routes are covered automatically. Complements the validation guardrail (ADR-013f).
