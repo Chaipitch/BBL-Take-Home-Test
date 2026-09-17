@@ -1,4 +1,5 @@
-import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants.js';
+import { RequestMethod } from '@nestjs/common';
+import { METHOD_METADATA, PATH_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants.js';
 import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum.js';
 
 interface RouteArg {
@@ -33,4 +34,25 @@ export function findUnvalidatedParams(controller: new (...args: never[]) => unkn
     }
   }
   return violations;
+}
+
+export interface RouteInfo {
+  controller: string;
+  handler: string;
+  method: string;
+  path: string;
+}
+
+/** Every HTTP route of a controller, from Nest's @Controller/@Get/... metadata (ADR-017). */
+export function listRoutes(controller: new (...args: never[]) => unknown): RouteInfo[] {
+  const base = String(Reflect.getMetadata(PATH_METADATA, controller) ?? '');
+  const proto = controller.prototype as Record<string, unknown>;
+  return Object.getOwnPropertyNames(proto)
+    .filter((name) => name !== 'constructor' && Reflect.getMetadata(PATH_METADATA, proto[name] as object) !== undefined)
+    .map((name) => {
+      const handler = proto[name] as object;
+      const sub = String(Reflect.getMetadata(PATH_METADATA, handler));
+      const path = `/${[base, sub].map((p) => p.replace(/^\/|\/$/g, '')).filter(Boolean).join('/')}`;
+      return { controller: controller.name, handler: name, method: RequestMethod[Reflect.getMetadata(METHOD_METADATA, handler) as number], path };
+    });
 }

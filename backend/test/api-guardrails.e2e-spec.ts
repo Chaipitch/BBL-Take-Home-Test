@@ -5,7 +5,7 @@ import { DiscoveryModule, DiscoveryService } from '@nestjs/core';
 import { z } from 'zod';
 import { ValidBody, ValidQuery } from '../src/common/validation.js';
 import { createTestApp, type TestApp } from './support/app.js';
-import { findUnvalidatedParams } from './support/guardrails.js';
+import { findUnvalidatedParams, listRoutes } from './support/guardrails.js';
 import { resetDatabase } from './support/db.js';
 
 describe('API guardrails (e2e)', () => {
@@ -45,8 +45,44 @@ describe('API guardrails (e2e)', () => {
         .getControllers()
         .map((wrapper) => wrapper.metatype as new (...args: never[]) => unknown);
 
-      expect(controllers.map((c) => c.name)).toEqual(expect.arrayContaining(['BookmarksController', 'CollectionsController', 'MeController']));
+      expect(controllers.map((c) => c.name)).toEqual(expect.arrayContaining(['BookmarksController', 'CollectionsController', 'MeController', 'SharesController', 'SharedController']));
       expect(controllers.flatMap(findUnvalidatedParams)).toEqual([]);
+    });
+  });
+
+  describe('every route requires authentication (ADR-017)', () => {
+    const controllers = () =>
+      t.app.get(DiscoveryService).getControllers().map((w) => w.metatype as new (...args: never[]) => unknown);
+
+    it('route discovery finds the known routes (so the sweep is not vacuous)', () => {
+      const routes = controllers().flatMap(listRoutes).map((r) => `${r.method} ${r.path}`);
+      expect(routes).toEqual(
+        expect.arrayContaining([
+          'GET /me',
+          'POST /collections',
+          'DELETE /collections/:id',
+          'GET /collections/:id/bookmarks',
+          'PATCH /bookmarks/:id',
+          'POST /collections/:id/shares',
+          'DELETE /collections/:id/shares/:shareId',
+          'GET /shared/collections/:id/bookmarks',
+        ]),
+      );
+    });
+
+    it('every registered route returns 401 without a token', async () => {
+      const results: string[] = [];
+      for (const route of controllers().flatMap(listRoutes)) {
+        const path = route.path.replace(/:[A-Za-z]+/g, '00000000-0000-4000-8000-000000000000');
+        const res = await t.http()[route.method.toLowerCase() as 'get'](path).send({});
+        if (res.status !== 401) results.push(`${route.method} ${route.path} → ${res.status}`);
+      }
+      expect(results).toEqual([]);
+    });
+
+    it('the recipient controller is read-only: GET handlers only (ADR-006f)', async () => {
+      const { SharedController } = await import('../src/shared/shared.controller.js');
+      expect(new Set(listRoutes(SharedController).map((r) => r.method))).toEqual(new Set(['GET']));
     });
   });
 

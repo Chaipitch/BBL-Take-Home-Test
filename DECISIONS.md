@@ -582,3 +582,9 @@ Share create (201, lower-cased match, Location), unknown email / unverified user
 ## ADR-017 — Route-wide authentication sweep (BBL-18)
 **Status.** Accepted — pre-approved agent recommendation.
 A test enumerates every registered route (controllers via Nest's `DiscoveryService`, paths and methods from route metadata), calls each without a token and expects `401`. New routes are covered automatically. Complements the validation guardrail (ADR-013f).
+
+### Implementation notes (ADR-015, ADR-017)
+- All 17 sharing tests passed on the first run → mutation-checked before trusting. **Caught (13):** no grantee filter on shared list/get; own collections visible via `/shared`; skipping the 404 check before shared bookmarks; `ownerId` leaking into the recipient DTO; share create without ownership check, with unverified recipients, without self-check, with `take: 1` (ambiguity undetected); share list/revoke without owner filter; revoke without `collectionId` filter. **Equivalent (1):** removing the grantee filter from the shared *bookmark* query — the preceding `get()` already 404s for collections not shared with the caller; kept as a redundant layer (same pattern as ADR-013's `listBookmarks`).
+- Owner share routes check collection ownership **before** looking up the email, so `recipient_not_found` is only observable on your own collections (test: someone else's collection returns the generic 404 for both valid and unknown emails).
+- ADR-017 sweep: routes discovered from `@Controller`/`@Get` metadata (8 known routes asserted present so the sweep can't pass vacuously); every route → 401. Mutations: `@Public()` on `GET /me` → sweep reports `GET /me → 500`; a `@Delete` added to `SharedController` → GET-only test fails.
+- `IdParam(name)` now accepts a parameter name (`:shareId`).

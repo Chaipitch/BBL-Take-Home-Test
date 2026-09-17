@@ -12,7 +12,7 @@ Contract for the bookmark-manager API (`backend/`, NestJS). Decisions behind eac
 | `/collections`, `GET /collections/:id/bookmarks` | Implemented (BBL-13) |
 | `/bookmarks` | Implemented (BBL-14) |
 | CORS (allow only `http://localhost:3000`) | Implemented (BBL-13) |
-| Sharing `/shared/...` | Specified in BBL-15 |
+| Sharing: `/collections/:id/shares`, `/shared/collections` | Implemented (BBL-15) |
 
 ---
 
@@ -58,6 +58,9 @@ Validation errors add a field list:
 | 400 | `validation_failed` | Body or query fails validation; unknown or server-owned fields; malformed JSON; bad cursor; empty PATCH; `collectionId` on a bookmark that isn't the caller's collection [012d, 012f, 012h, 012k] |
 | 401 | `unauthorized` | Missing/invalid token. **Identical body for every cause**; `WWW-Authenticate: Bearer` (+ `error="invalid_token"` when a token was sent) [010e] |
 | 404 | `not_found` | Resource doesn't exist, **belongs to someone else**, or the path id isn't a UUID — **identical response in all three cases** [004a] |
+| 404 | `recipient_not_found` | Share target email has no user with a verified email [006c] |
+| 409 | `ambiguous_recipient` | More than one verified user has that email [015c] |
+| 409 | `already_shared` | Collection already shared with that user [015c] |
 | 409 | `collection_not_empty` | `DELETE /collections/:id` on a non-empty collection without `?confirm=true`; body adds `"bookmarkCount": <n>` [005b] |
 | 413 | `payload_too_large` | Request body larger than 100 KB [013e] |
 | 500 | `internal_error` | Unexpected failure; no internal details in the body |
@@ -153,6 +156,31 @@ Known and accepted races [012l, 013d]: delete runs as *find → count → delete
 | `PATCH /bookmarks/:id` | any of `url`, `title`, `notes`, `collectionId` (≥ 1) | `200` Bookmark | 400, 404 |
 | `DELETE /bookmarks/:id` | — | `204` | 404 |
 
+### Sharing — implemented (BBL-15) [006, 015]
+
+Owner routes (the collection must be the caller's; otherwise `404 not_found`, checked before the email):
+
+| Method & path | Body / query | Success | Errors |
+|---|---|---|---|
+| `POST /collections/:id/shares` | `{ email }` | `201` Share + `Location` | 400 (invalid email, self-share), 404 `not_found`, 404 `recipient_not_found`, 409 `ambiguous_recipient`, 409 `already_shared` |
+| `GET /collections/:id/shares` | `limit`, `cursor` | `200` list of Share | 400, 404 |
+| `DELETE /collections/:id/shares/:shareId` | — | `204` | 404 |
+
+Recipient routes (read-only; GET only):
+
+| Method & path | Query | Success | Errors |
+|---|---|---|---|
+| `GET /shared/collections` | `limit`, `cursor` | `200` list of SharedCollection | 400 |
+| `GET /shared/collections/:id` | — | `200` SharedCollection | 404 (not shared with caller, own collection, random, malformed — identical) |
+| `GET /shared/collections/:id/bookmarks` | `limit`, `cursor`, `q` | `200` list of SharedBookmark | 400, 404 |
+
+Shapes (sharing is outside the brief's resource shapes, which remain unchanged for owner routes):
+- **Share:** `{ id, collectionId, email, createdAt }`: no recipient user id.
+- **SharedCollection:** `{ id, name, ownerEmail, sharedAt, createdAt, updatedAt }`: no `ownerId` [006e].
+- **SharedBookmark:** `{ id, url, title, notes, collectionId, createdAt, updatedAt }`: no `ownerId`.
+
+Rules: recipient = existing user with a verified email, matched trimmed + lower-cased, stored by user id [006g]; enumeration of verified emails via `recipient_not_found` is an accepted trade-off [006c]; recipients never see other recipients; revoking or deleting the collection removes access immediately.
+
 ## 7. How the privacy invariant is enforced
 
 > Every row belongs to one owner; a user must never see, modify, or learn of the existence of another user's data (brief §3). Only exception: collections explicitly shared read-only, served under `/shared/...` (ADR-006, BBL-15).
@@ -164,6 +192,8 @@ Known and accepted races [012l, 013d]: delete runs as *find → count → delete
 | Data access | Every query on owned data filters by `ownerId`; single-row reads/writes use `id_ownerId` (collections) or `{ id, ownerId }` (bookmarks), so not-found and not-yours are the same Prisma result | Implemented | `test/collections.e2e-spec.ts`, `test/bookmarks.e2e-spec.ts` cross-user tests for every route; mutation checks: removing `ownerId` from any get/update/delete/list fails tests |
 | Existence hiding | "not yours", "doesn't exist" and malformed path id → identical `404` (fixed `detail` text); `?collectionId=` of someone else's collection → same empty page as an own empty collection or a random id; assigning someone else's collection → same `400` as a random id; UUIDs | Implemented | both e2e files compare the response bodies for equality |
 | Relation integrity | Service check (`id_ownerId` lookup → 400) **and** composite FK `(collectionId, ownerId)`; an FK race maps to the same 400 | Implemented | `test/bookmarks.e2e-spec.ts` (POST/PUT/PATCH into B's collection); `bookmarks.service.spec.ts` (FK race mapping); mutation: removing either layer alone keeps the API correct, removing both fails 3 tests |
+| Sharing exception | `CollectionShare` grants access **only** in `SharedService` (every query filters `shares.some.granteeUserId = caller`); owner routes never read shares; the shared controller has only GET handlers; share management requires owning the collection before the email is considered | Implemented | `test/sharing.e2e-spec.ts` (17); guardrail GET-only test; 14 mutation checks (1 equivalent, documented) |
+| Authentication on every route | A test enumerates every registered route from Nest metadata and expects 401 without a token | Implemented | `test/api-guardrails.e2e-spec.ts`; mutation: `@Public()` on `/me` fails it |
 | Stored-XSS prevention | Bookmark URLs must be absolute `http`/`https`; plain `z.url()` would accept `javascript:`/`data:`/`file:` | Implemented | `test/bookmarks.e2e-spec.ts` URL cases; mutation: plain `z.url()` fails 6 tests |
 | Input validation | Every body/query goes through a zod schema via `@ValidBody`/`@ValidQuery`; strict objects; a test inspects every registered route and fails on a bare `@Body`/`@Query` (Nest's pipe silently skips params without a schema) | Implemented | `test/api-guardrails.e2e-spec.ts` (self-tested; mutation: bare `@Body()` fails it) |
 | Profile/email | Email for sharing comes only from Auth0 `/userinfo` server-side, verified flag required | Implemented | `test/users.e2e-spec.ts` |

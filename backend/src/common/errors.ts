@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 export interface FieldError {
   field: string;
@@ -18,3 +18,12 @@ export class CollectionNotEmptyException extends ConflictException {
     super('Collection has bookmarks; repeat with ?confirm=true to delete them too');
   }
 }
+
+/** 404 recipient_not_found: no user with that email and a verified email (ADR-006c). */
+export class RecipientNotFoundException extends NotFoundException {}
+
+/** 409 ambiguous_recipient: more than one verified user has that email (ADR-015c). */
+export class AmbiguousRecipientException extends ConflictException {}
+
+/** 409 already_shared (ADR-015c). */
+export class AlreadySharedException extends ConflictException {}

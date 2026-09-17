@@ -1,7 +1,13 @@
 import { STATUS_CODES } from 'node:http';
 import { Catch, HttpException, HttpStatus, Logger, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
 import type { Response } from 'express';
-import { CollectionNotEmptyException, ValidationFailedException } from './errors.js';
+import {
+  AlreadySharedException,
+  AmbiguousRecipientException,
+  CollectionNotEmptyException,
+  RecipientNotFoundException,
+  ValidationFailedException,
+} from './errors.js';
 
 export interface ProblemDetails {
   type: 'about:blank';
@@ -55,6 +61,15 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         detail: 'The collection has bookmarks; repeat with ?confirm=true to delete them too',
         bookmarkCount: exception.bookmarkCount,
       });
+    }
+    if (exception instanceof RecipientNotFoundException) {
+      return problem(404, { code: 'recipient_not_found', detail: 'No user with a verified email matches that address' });
+    }
+    if (exception instanceof AmbiguousRecipientException) {
+      return problem(409, { code: 'ambiguous_recipient', detail: 'More than one account matches that email; sharing was not performed' });
+    }
+    if (exception instanceof AlreadySharedException) {
+      return problem(409, { code: 'already_shared', detail: 'The collection is already shared with that user' });
     }
     if (exception instanceof HttpException) {
       return problem(exception.getStatus());
