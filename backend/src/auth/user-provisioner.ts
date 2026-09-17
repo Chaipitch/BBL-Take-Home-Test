@@ -87,7 +87,8 @@ export class UserProvisioner {
         const now = new Date();
         const user = await this.prisma.user.upsert({
           where: { auth0Sub: sub },
-          create: { auth0Sub: sub, ...profile, profileSyncedAt: now },
+          // Same instant for createdAt so a new row is never "synced before it was created".
+          create: { auth0Sub: sub, ...profile, profileSyncedAt: now, createdAt: now },
           update: { ...profile, profileSyncedAt: now },
           select: { id: true },
         });

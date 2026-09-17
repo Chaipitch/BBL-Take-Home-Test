@@ -82,6 +82,8 @@ describe('User provisioning and GET /me (e2e, real database)', () => {
       expect(res.body).toEqual({ id: row!.id, email: 'user-a@test.com', emailVerified: true, name: SUB_A });
       expect(Object.keys(res.body).sort()).toEqual(['email', 'emailVerified', 'id', 'name']);
       expect(row!.profileSyncedAt).toBeInstanceOf(Date);
+      // Found in a real-login check: sync time was 13 ms before createdAt.
+      expect(row!.profileSyncedAt!.getTime()).toBeGreaterThanOrEqual(row!.createdAt.getTime());
       expect(userInfo.calls).toHaveLength(1);
     });
 

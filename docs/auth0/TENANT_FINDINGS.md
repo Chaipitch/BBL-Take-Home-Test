@@ -72,3 +72,17 @@ Obtained with `scripts/inspect-tokens.mjs` (Authorization Code + PKCE S256, `aud
 | No token | 401 | `Bearer` | `no authorization header` |
 
 No JWT-shaped strings found in the API log or script output.
+
+---
+
+## Real login against `GET /me` — 2026-09-17 (BBL-11 verification)
+
+`node scripts/inspect-tokens.mjs --api http://localhost:4000/me`, API built from `d99f310`, dev database empty beforehand. Developer performed the login.
+
+| Probe `GET /me` | Status | Result |
+|---|---|---|
+| Real access token | 200 | `{ id: 56bfbef3-…, email: candidate@test.com, emailVerified: true, name: Candy }` — profile fetched from the tenant's real `/userinfo` |
+| Real ID token | 401 | `Bearer error="invalid_token"`, logged `ERR_JWT_CLAIM_VALIDATION_FAILED` |
+| No token | 401 | `Bearer` |
+
+Resulting `User` row: `auth0Sub = auth0|62e089faea483987422db6cc` (matches token `sub`), email/emailVerified/name as above, `profileSyncedAt` set. No `/userinfo` failure warnings; no JWT-shaped strings in API log or script output.
