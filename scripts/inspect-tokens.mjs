@@ -147,6 +147,8 @@ async function main() {
       const res = await fetch(API_URL, token ? { headers: { Authorization: `Bearer ${token}` } } : {});
       const verdict = res.status === expected ? 'OK' : 'UNEXPECTED';
       console.log(`${verdict}  ${label}: ${res.status} (expected ${expected}) www-authenticate=${res.headers.get('www-authenticate') ?? '-'}`);
+      // Response bodies never contain tokens; print successful JSON bodies (e.g. GET /me).
+      if (res.ok && res.headers.get('content-type')?.includes('application/json')) console.log('     body:', await res.json());
     };
     await probe('real access token', tokens.access_token, 200);
     await probe('real ID token (aud = client id)', tokens.id_token, 401);
