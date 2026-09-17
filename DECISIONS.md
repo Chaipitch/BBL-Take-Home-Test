@@ -29,7 +29,7 @@ Short ADRs for calls the brief left open.
 | 009 | Email/email_verified from `/userinfo`, stored, refreshed every 24h | Accepted | Developer (agent recommendation) |
 | 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
 | 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
-| 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | **Proposed** — awaiting developer | — |
+| 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | Accepted — contract in `API_DESIGN.md` | Developer (agent recommendations; 012g follow the brief; `?q=` on title) |
 
 ---
 
@@ -270,9 +270,11 @@ Concurrency after 24 h: several parallel requests may each call `/userinfo` once
 - **Timestamp fix found by that check:** `profileSyncedAt` was 13 ms *before* `createdAt` (sync time taken in app code before the insert; `createdAt` defaulted during it). On creation both are now set to the same instant. e2e asserts `profileSyncedAt >= createdAt`; removing the fix fails it 5/5 runs.
 
 ## ADR-012 — API contract for `/collections`, `/bookmarks`, `/me` (BBL-12)
-**Status.** **Proposed** — awaiting developer decision. Nothing implemented. Once accepted, the contract is written to `API_DESIGN.md` and endpoints/tests follow it. Sharing routes (`/shared/...`) are specified in BBL-15.
+**Status.** Accepted — developer, 2026-09-17: all recommendations; 012g follows the brief's resource shape; 012i `?q=` = case-insensitive contains on **title**. Contract written to `API_DESIGN.md` and endpoints/tests follow it. Sharing routes (`/shared/...`) are specified in BBL-15.
 **Already decided (inputs).** UUID ids, malformed path id → 404 (004/004a); collection delete cascades, non-empty needs `?confirm=true` else 409 + count (005/005b); same-owner check + composite FK (005a); duplicate names allowed (007); 401/503 rules (010e); `@CurrentUser()` → `{ id, sub }` (011b); length limits: collection name 200, url 2048, title 500, notes 10 000 (007).
 **Brief requires.** Both resources: get one, list, create, PUT, PATCH, delete, **filtering**; `GET /collections/:id/bookmarks`; `/me`. Suggested fields include `ownerId`.
+
+> **Details filled in by the agent while writing `API_DESIGN.md` — not individually decided; flagged for developer review.** Error `code` values (`validation_failed`, `unauthorized`, `not_found`, `collection_not_empty`, `internal_error`, `service_unavailable`) and `"type": "about:blank"`; filter values `name`/`q` must be non-empty (empty → 400), `q` max 500 chars; `collectionId=none` as the literal for uncategorised; `confirm` must be exactly `true` (other values → 400); `?confirm=true` on an empty collection is allowed; `Location` header paths; cursor encodes `(createdAt, id)`; 500 body carries no internal details.
 
 ### 012a — Error response body
 | Option | Example |
