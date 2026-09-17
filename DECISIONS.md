@@ -30,7 +30,7 @@ Short ADRs for calls the brief left open.
 | 010 | API authentication guard (library, scope, checks, JWKS, errors) | Accepted — implemented | Developer (all agent recommendations) |
 | 011 | User provisioning, `/userinfo` sync, `GET /me` | Accepted — implemented | Developer (agent recommendations; chose no backoff in 011e) |
 | 012 | API contract: errors, validation, verbs, lists, filters (BBL-12) | Accepted — contract in `API_DESIGN.md` | Developer (agent recommendations; 012g follow the brief; `?q=` on title) |
-| 013 | Collections implementation design + shared API plumbing (BBL-13) | Accepted | Developer (all agent recommendations, incl. wider delete race and 413) |
+| 013 | Collections implementation design + shared API plumbing (BBL-13) | Accepted — implemented | Developer (all agent recommendations, incl. wider delete race and 413) |
 
 ---
 
@@ -455,3 +455,11 @@ Contract lists it as not yet implemented.
 - `Location` header on 201; `Content-Type: application/problem+json` on errors.
 - **Guardrail test** (013f) and **mutation checks**: remove `ownerId` from one read and one write → a cross-user test must fail.
 - Bookmarks for `/collections/:id/bookmarks` tests are inserted directly with Prisma (the `/bookmarks` endpoints are BBL-14).
+
+### Implementation notes (found while building ADR-013)
+- **Prisma `contains` does not escape LIKE wildcards.** 013i said "verify, don't assume". The test failed: `?name=%` returned every collection, `?name=_` matched any character. Not a cross-user leak (query still owner-scoped), but wrong results. Fixed with `containsText()` escaping `\`, `%`, `_`; tests include backslash cases; removing the escaping fails 4 tests.
+- **CORS with `origin` as a string echoes that origin to every caller.** Browsers still block mismatches, but the test expecting no header for `https://evil.test` failed. Switched to an array so `cors` compares and omits the header on mismatch.
+- **Flaky e2e (≈20% of runs) — root cause found, not retried away.** Symptoms varied: `401` for valid tokens, `404` for existing routes, `Parse Error: Expected HTTP/`, `socket hang up`. Isolated requests (900) never failed. First hypothesis (HTTP keep-alive socket reuse) was tested with `Connection: close` and **disproved** (5/20 failures). Second hypothesis: supertest given an unstarted server listens on a random port on `::` for every request; this Mac has 12 processes (IDE, Postman, Notion, Spotify…) listening on specific `127.0.0.1` ports in the ephemeral range, and a connection to `127.0.0.1:<port>` reaches them instead. Fix: `listenOnLoopback()` starts the app once on `127.0.0.1:0`. Result: 0/20 collections runs, 0/10 full e2e runs, 0/10 unit runs. Applied to all test files; also removed the scaffold's `supertest/types` import, fixing the long-standing tsc error.
+- **404 body text is fixed**, not the exception message: `ParseUUIDPipe` says "uuid is expected", which would make a malformed id distinguishable from a not-yours id. Test compares the three 404 bodies for equality.
+- **Mutation checks:** removing `ownerId` from `get()`, `update()`, `list()`; skipping the confirm check; removing LIKE escaping; bare `@Body()` on POST (guardrail test fails) — each makes tests fail. **Not caught: removing `ownerId` from the bookmark query inside `listBookmarks()`** — an equivalent mutant: the method first 404s on a collection that isn't the caller's, and the composite FK guarantees every bookmark in the caller's collection has the caller as owner. Kept as a redundant third layer; documented rather than tested with a contrived test.
+- **Content-Type** of errors is `application/problem+json`; `Location` exposed via CORS for the SPA.

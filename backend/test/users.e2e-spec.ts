@@ -11,6 +11,7 @@ import { PROFILE_MAX_AGE_MS } from '../src/auth/user-provisioner.js';
 import { UserInfoClient, type UserInfoResult } from '../src/auth/userinfo.client.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { resetDatabase } from './support/db.js';
+import { listenOnLoopback } from './support/app.js';
 import { createTestSigner, testAuthConfig, type TestSigner } from './support/tokens.js';
 
 class FakeUserInfo {
@@ -33,10 +34,11 @@ describe('User provisioning and GET /me (e2e, real database)', () => {
   let prisma: PrismaService;
   let signer: TestSigner;
   let userInfo: FakeUserInfo;
+  let baseUrl: string;
 
   const tokenFor = (sub: string) => signer.sign({ sub });
   const me = async (sub: string) =>
-    request(app.getHttpServer()).get('/me').set('Authorization', `Bearer ${await tokenFor(sub)}`);
+    request(baseUrl).get('/me').set('Authorization', `Bearer ${await tokenFor(sub)}`);
   const profileOk = (sub: string, extra: Record<string, unknown> = {}): UserInfoResult => ({
     kind: 'ok',
     claims: { sub, email: `${sub.split('|')[1]}@test.com`, email_verified: true, name: sub, ...extra },
@@ -56,7 +58,7 @@ describe('User provisioning and GET /me (e2e, real database)', () => {
       .compile();
     moduleRef.useLogger(false);
     app = moduleRef.createNestApplication();
-    await app.init();
+    baseUrl = await listenOnLoopback(app);
     prisma = app.get(PrismaService);
   });
 
@@ -202,7 +204,7 @@ describe('User provisioning and GET /me (e2e, real database)', () => {
 
   describe('identity', () => {
     it('GET /me without a token → 401 and no user created', async () => {
-      await request(app.getHttpServer()).get('/me').expect(401);
+      await request(baseUrl).get('/me').expect(401);
       expect(await prisma.user.count()).toBe(0);
     });
 

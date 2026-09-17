@@ -46,6 +46,13 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - `upsert` with `update: {}` is **not atomic** (SELECT then INSERT → P2002 under concurrency). Always give `update` at least one field, and cover create-on-first-use paths with a parallel test.
 - A race test needs many rounds or a widened window; one passing round proves nothing.
 
+## API implementation rules (BBL-13)
+- Controllers take input only via `@ValidBody(schema)` / `@ValidQuery(schema)` / `@IdParam()`. A bare `@Body()`/`@Query()` is **not validated** by Nest's schema pipe and fails `test/api-guardrails.e2e-spec.ts`.
+- Text filters use `containsText()` from `common/filters.ts` — Prisma `contains` does not escape `%`/`_`.
+- Single-row reads/writes on owned data use a compound unique (`id_ownerId`) or `{ id, ownerId }`; never `where: { id }` alone.
+- Errors go through `ProblemDetailsFilter`; never put exception messages from libraries into responses.
+- e2e tests: build apps with `createTestApp()` or `listenOnLoopback()`; **never `request(app.getHttpServer())`** (requests can reach other local apps — see ADR-013 notes).
+
 ## Conventions
 - Status codes / error shape: follow `API_DESIGN.md` (source of truth). If code and doc disagree, stop and flag it.
 - Decisions not dictated by the brief go in `DECISIONS.md` before implementing.

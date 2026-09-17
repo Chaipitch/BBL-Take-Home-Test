@@ -17,6 +17,7 @@ import {
   testAuthConfig,
   type TestSigner,
 } from '../../test/support/tokens.js';
+import { listenOnLoopback } from '../../test/support/app.js';
 import { AUTH_CONFIG } from './auth.config.js';
 import { AuthModule } from './auth.module.js';
 import { CurrentUser } from './current-user.decorator.js';
@@ -50,8 +51,11 @@ describe('AuthGuard (real verifier, local test keys)', () => {
   let publicKeyPem: string;
   const sign: TestSigner['sign'] = (...args) => signer.sign(...args);
 
+  const urls = new Map<INestApplication, string>();
+  const http = (nest: INestApplication) => request(urls.get(nest)!);
+
   const get = (path: string, token?: string) => {
-    const req = request(app.getHttpServer()).get(path);
+    const req = http(app).get(path);
     return token === undefined ? req : req.set('Authorization', `Bearer ${token}`);
   };
 
@@ -69,7 +73,7 @@ describe('AuthGuard (real verifier, local test keys)', () => {
       .compile();
     moduleRef.useLogger(false);
     const nest = moduleRef.createNestApplication();
-    await nest.init();
+    urls.set(nest, await listenOnLoopback(nest)); // never supertest(getHttpServer()): see listenOnLoopback
     return nest;
   }
 
@@ -102,7 +106,7 @@ describe('AuthGuard (real verifier, local test keys)', () => {
     });
 
     it('a lowercase "bearer" scheme (scheme is case-insensitive)', async () => {
-      await request(app.getHttpServer())
+      await http(app)
         .get('/private')
         .set('Authorization', `bearer ${await sign()}`)
         .expect(200);
@@ -129,12 +133,12 @@ describe('AuthGuard (real verifier, local test keys)', () => {
     });
 
     it('a non-Bearer scheme', async () => {
-      const res = await request(app.getHttpServer()).get('/private').set('Authorization', 'Basic dXNlcjpwYXNz');
+      const res = await http(app).get('/private').set('Authorization', 'Basic dXNlcjpwYXNz');
       expectGeneric401(res, 'Bearer');
     });
 
     it('a token passed only in the query string', async () => {
-      const res = await request(app.getHttpServer()).get('/private').query({ access_token: await sign() });
+      const res = await http(app).get('/private').query({ access_token: await sign() });
       expectGeneric401(res, 'Bearer');
     });
 
@@ -225,8 +229,8 @@ describe('AuthGuard (real verifier, local test keys)', () => {
       try {
         const ps256 = await sign({}, { alg: 'PS256', kid: 'no-alg-key' }, (await importJWK(privateJwk, 'PS256')) as CryptoKey);
         const rs256 = await sign({}, { alg: 'RS256', kid: 'no-alg-key' }, (await importJWK(privateJwk, 'RS256')) as CryptoKey);
-        await request(noAlgApp.getHttpServer()).get('/private').set('Authorization', `Bearer ${rs256}`).expect(200);
-        await request(noAlgApp.getHttpServer()).get('/private').set('Authorization', `Bearer ${ps256}`).expect(401);
+        await http(noAlgApp).get('/private').set('Authorization', `Bearer ${rs256}`).expect(200);
+        await http(noAlgApp).get('/private').set('Authorization', `Bearer ${ps256}`).expect(401);
       } finally {
         await noAlgApp.close();
       }
@@ -242,7 +246,7 @@ describe('AuthGuard (real verifier, local test keys)', () => {
         return { id: 'x', sub };
       });
       try {
-        await request(spyApp.getHttpServer()).get('/private').set('Authorization', `Bearer ${token}`).expect(200);
+        await http(spyApp).get('/private').set('Authorization', `Bearer ${token}`).expect(200);
         expect(calls).toEqual([['auth0|someone', token]]);
       } finally {
         await spyApp.close();
@@ -256,7 +260,7 @@ describe('AuthGuard (real verifier, local test keys)', () => {
         return { id: 'x', sub };
       });
       try {
-        await request(spyApp.getHttpServer()).get('/private').set('Authorization', `Bearer ${await sign({ aud: CLIENT_ID })}`).expect(401);
+        await http(spyApp).get('/private').set('Authorization', `Bearer ${await sign({ aud: CLIENT_ID })}`).expect(401);
         expect(called).toBe(false);
       } finally {
         await spyApp.close();
@@ -268,7 +272,7 @@ describe('AuthGuard (real verifier, local test keys)', () => {
         throw new InvalidTokenError('userinfo_unauthorized');
       });
       try {
-        const res = await request(rejecting.getHttpServer()).get('/private').set('Authorization', `Bearer ${await sign()}`);
+        const res = await http(rejecting).get('/private').set('Authorization', `Bearer ${await sign()}`);
         expect(res.status).toBe(401);
         expect(res.body).toEqual({ message: 'Unauthorized', statusCode: 401 });
         expect(res.headers['www-authenticate']).toBe('Bearer error="invalid_token"');
@@ -282,7 +286,7 @@ describe('AuthGuard (real verifier, local test keys)', () => {
         throw new Error('connection refused');
       });
       try {
-        await request(broken.getHttpServer()).get('/private').set('Authorization', `Bearer ${await sign()}`).expect(500);
+        await http(broken).get('/private').set('Authorization', `Bearer ${await sign()}`).expect(500);
       } finally {
         await broken.close();
       }
@@ -302,7 +306,7 @@ describe('AuthGuard (real verifier, local test keys)', () => {
     ])('%s', async (_label, error) => {
       const outageApp = await startApp(failingSource(error));
       try {
-        const res = await request(outageApp.getHttpServer())
+        const res = await http(outageApp)
           .get('/private')
           .set('Authorization', `Bearer ${await sign()}`);
         expect(res.status).toBe(503);
