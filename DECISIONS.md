@@ -37,6 +37,7 @@ Short ADRs for calls the brief left open.
 | 017 | Route-wide authentication sweep test (BBL-18) | Accepted — pre-approved | same |
 | 018 | Frontend architecture: scaffold, routing, auth, data, UI flows, tests (BBL-19–22) | Accepted | Developer (all agent recommendations) |
 | 019 | Sharing UI: share/revoke and shared-with-me pages (BBL-23) | Accepted | Developer (all agent recommendations) |
+| 020 | Bonuses: Dockerfiles, `/all` page, full-text search (BBL-29) | **Proposed** — awaiting developer | — |
 
 ---
 
@@ -756,3 +757,36 @@ Share success clears the input and lists the share with a lower-cased email; eac
 - **A test of mine was wrong, not the code:** the "no owner links" assertion also matched the app bar's Bookmarks nav link. Narrowed to detail routes.
 - **Mutation checks (10, all caught):** generic message instead of `recipient_not_found` text; self-share field error unmapped; revoke without confirmation; email field not cleared; notes hidden from recipients; titles linking to owner pages; owner email hidden; Read-only chip removed; search not written to the URL; nav item removed.
 - Frontend tests: 41 (27 + 14 for sharing).
+
+## ADR-020 — Bonuses: Docker, `/all` page, full-text search (BBL-29)
+**Status.** **Proposed** — awaiting developer decision. CI is deliberately out of scope (developer deferred it).
+**Brief §3.4.** "Dockerfile — containerise the backend, the frontend, or both · An `/all` page — a third frontend page showing collections together with the bookmarks inside them · Full-text search — search across bookmark titles and notes." Bonuses are lightly weighted and must not put the core at risk.
+
+### 020a — Containers
+| Option | Notes |
+|---|---|
+| **A. Dockerfile for each app + an opt-in compose profile** (`docker compose --profile app up`) | Backend: multi-stage Node build (`prisma generate`, `nest build`), runs migrations then starts. Frontend: build with Vite, serve the static files with nginx on port 3000 (the port Auth0's callback requires). The existing Postgres service is unchanged, and the default `docker compose up -d postgres` for local dev keeps working. |
+| B. Backend only | Half the bonus, less to explain. |
+| C. Compose everything by default | Would change the documented local workflow (and the frontend build bakes in `VITE_*` values). |
+**Recommendation: A**, with the images built and actually run once before claiming they work.
+**Note:** frontend env vars are compile-time in Vite, so the image is built with the local values as build args; that is written in the README rather than pretended otherwise.
+
+### 020b — `/all` page
+| Option | Notes |
+|---|---|
+| **A. Frontend-only, using existing endpoints:** list collections, then their bookmarks per collection, plus an "Uncategorised" section (`?collectionId=none`) | No API change, so nothing new to secure. Costs one request per collection (fine at this scale, and the page caps at the first 100 collections with a note). |
+| B. New API endpoint returning collections with nested bookmarks | One request, but a new privacy-sensitive endpoint, new contract, new tests — for a lightly weighted bonus. |
+**Recommendation: A.**
+
+### 020c — Full-text search
+Today `?q=` is a case-insensitive *contains* filter on **title** (ADR-012i), with LIKE wildcards escaped.
+| Option | Notes |
+|---|---|
+| **A. Add `?search=` using Postgres full-text search over title + notes** (`websearch_to_tsquery`, title weighted above notes), with a GIN expression index; `?q=` stays as it is | Real FTS (stemming, `"quoted phrases"`, `-exclusions`), and it matches the brief's wording "across titles and notes". Keeps the existing filter's behaviour, so the frontend and its tests are unaffected. Needs a raw parameterised query for the match (Prisma has no stable FTS filter here), which must keep the `ownerId` scoping — tested with the same cross-user tests as every other list. |
+| B. Extend `q` to `contains` over title **and** notes | Two lines of change, no index, no stemming; quietly changes documented behaviour of `q`. |
+| C. Prisma's preview `fullTextSearch` feature | Preview flag on a pinned 7.10 client; less predictable than writing the SQL. |
+**Recommendation: A.** `search` and `q` may be combined (both applied). Ordering stays newest-first so keyset pagination is unchanged (no relevance ranking — documented).
+**Where it shows up:** `/bookmarks` search box switches to `search=`; the shared-collection page keeps `q` (title only) unless you want it there too.
+
+### 020d — Order of work and safety
+Docker → `/all` → search, each committed separately, with the full suites re-run after each. If any of them would require weakening an existing rule or test, stop and report instead.
