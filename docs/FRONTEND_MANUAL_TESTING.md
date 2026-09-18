@@ -40,7 +40,8 @@ Open **http://localhost:3000** in a normal browser window with DevTools → **Ne
 ### C. Bookmarks (brief §3.2)
 - [ ] List shows bookmarks with collection chips; each URL opens in a new tab.
 - [ ] **Filter by collection**: choose Security → only its bookmarks; URL becomes `?collectionId=…`. Choose **Uncategorised** → `?collectionId=none`.
-- [ ] Search "owasp" + Enter → `?q=owasp`; reload the page → filters are kept.
+- [ ] Search "owasp" + Enter → `?search=owasp`; reload the page → filters are kept.
+- [ ] Full-text search (bonus): search `PKCE` → finds the RFC bookmark by **title**; search `guards` → finds the NestJS bookmark by its **notes**; `"twelve-factor"` (quoted) and `postgres -manual` behave as expected.
 - [ ] **Create** with URL `javascript:alert(1)` → the form shows a URL error from the API; nothing is created.
 - [ ] **Create** a valid bookmark in a collection → appears in the list.
 - [ ] **View details** → shows URL, collection link, notes, dates; **Edit** → change title and collection → saved.
@@ -60,6 +61,10 @@ Open **http://localhost:3000** in a normal browser window with DevTools → **Ne
 - [ ] Open `http://localhost:3000/collections/<bCollectionId>` (from `scripts/manual-test/print-seed-ids.sql`) → "Not found. It may have been deleted, or it is not yours."
 - [ ] `http://localhost:3000/bookmarks/<bBookmarkId>` → same message.
 - [ ] `http://localhost:3000/bookmarks?collectionId=<bCollectionId>` → "No bookmarks match these filters."
+
+### F2. `/all` page (bonus)
+- [ ] Nav **All** → each collection with its bookmarks inside, then an **Uncategorised** section.
+- [ ] Collection names link to the collection page; there are no delete buttons on this overview.
 
 ### F. Sharing (BBL-23; seed gives user B a collection shared with you)
 - [ ] Nav shows **Shared with me** → `/shared` lists "Team reading list", "Shared by user-b@example.com".
