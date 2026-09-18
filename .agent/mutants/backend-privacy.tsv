@@ -1,0 +1,13 @@
+# label	file	search	replace	[survive]
+# Rules that keep one user's data away from another (proved by the e2e suite).
+#   .agent/scripts/mutation-check.sh --file .agent/mutants/backend-privacy.tsv
+#test: npm run test:e2e --prefix backend
+collections: read ignores owner	backend/src/collections/collections.service.ts	findUnique({ where: { id_ownerId: { id, ownerId } }, select: collectionSelect })	findUnique({ where: { id }, select: collectionSelect })
+collections: list ignores owner	backend/src/collections/collections.service.ts	      where: {\n        ownerId,\n        ...(query.name	      where: {\n        ...(query.name
+bookmarks: read ignores owner	backend/src/bookmarks/bookmarks.service.ts	findUnique({ where: { id, ownerId }, select	findUnique({ where: { id }, select
+bookmarks: delete ignores owner	backend/src/bookmarks/bookmarks.service.ts	delete({ where: { id, ownerId } })	delete({ where: { id } })
+bookmarks: any collection accepted (FK + P2003 mapping cover it — ADR-014c)	backend/src/bookmarks/bookmarks.service.ts	    if (collectionId === undefined || collectionId === null) return;	    return;	survive
+shares: create skips ownership check	backend/src/shares/shares.service.ts	    await this.assertOwnCollection(ownerId, collectionId);\n\n    const candidates	    const candidates
+shares: unverified recipients allowed	backend/src/shares/shares.service.ts	where: { email: body.email, emailVerified: true }	where: { email: body.email }
+shared: list ignores the grantee filter	backend/src/shared/shared.service.ts	where: { ...sharedWith(userId), ...afterCursor(query.cursor) }	where: { ...afterCursor(query.cursor) }
+shared: get ignores the grantee filter	backend/src/shared/shared.service.ts	findFirst({ where: { id, ...sharedWith(userId) }	findFirst({ where: { id }

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Fast gate before every commit: type check, lint and unit tests for the workspaces that changed.
+# Install:  ln -sf ../../.agent/hooks/pre-commit .git/hooks/pre-commit
+# Skip once (rarely, and say so in the commit message):  git commit --no-verify
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+changed() { printf '%s\n' "$staged" | grep -q "^$1/"; }
+fail=0
+run() { echo "→ $*"; "$@" || fail=1; }
+
+if changed backend; then
+  run npx --prefix backend tsc --noEmit -p backend/tsconfig.json
+  run npm run --prefix backend lint
+  run npm test --prefix backend            # unit only; e2e needs Postgres and runs separately
+fi
+if changed frontend; then
+  run npm run --prefix frontend typecheck
+  run npm run --prefix frontend lint
+  run npm test --prefix frontend
+fi
+
+if [ $fail -ne 0 ]; then
+  echo "pre-commit: checks failed — fix them, or commit with --no-verify and explain why."
+  exit 1
+fi

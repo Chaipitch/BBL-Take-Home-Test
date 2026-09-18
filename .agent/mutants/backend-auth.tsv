@@ -1,0 +1,9 @@
+# label	file	search	replace	[survive]
+# Token verification rules (proved by the unit suite — these are not exercised by e2e tests).
+#   .agent/scripts/mutation-check.sh --file .agent/mutants/backend-auth.tsv
+#test: npm test --prefix backend
+auth: audience not checked	backend/src/auth/token-verifier.ts	audience: this.config.audience,	
+auth: issuer not checked	backend/src/auth/token-verifier.ts	issuer: this.config.issuer,	
+auth: RS256 pin removed	backend/src/auth/token-verifier.ts	algorithms: ['RS256'],	
+auth: exp not required	backend/src/auth/token-verifier.ts	requiredClaims: ['sub', 'exp']	requiredClaims: ['sub']
+auth: outage reported as invalid token	backend/src/auth/token-verifier.ts	if (typeof code === 'string' && INVALID_TOKEN_CODES.has(code))	if (typeof code === 'string')
