@@ -63,6 +63,11 @@ This file is the single source of truth a fresh agent session needs. Keep it cur
 - Dialogs are mounted only while open (no state resets in effects).
 - Tests: `npm test` in `frontend/` (Vitest + Testing Library + MSW; Auth0 mocked in `src/test/setup.ts`). After a first-time pass, mutation-check the behaviour the test claims to cover.
 
+## Agent capabilities (`/.agent/`, see its README)
+- `/.agent/scripts/mutation-check.sh` — after writing tests for a rule, and **always** when a new suite passes first try. Saved sets: `.agent/mutants/backend-auth.tsv` (unit), `backend-privacy.tsv` (e2e).
+- `/.agent/commands/privacy-review.md` — run through it before committing any change to a query, controller, route or the guard.
+- `/.agent/hooks/pre-commit` — install with `ln -sf ../../.agent/hooks/pre-commit .git/hooks/pre-commit`.
+
 ## Conventions
 - Status codes / error shape: follow `API_DESIGN.md` (source of truth). If code and doc disagree, stop and flag it.
 - Decisions not dictated by the brief go in `DECISIONS.md` before implementing.
