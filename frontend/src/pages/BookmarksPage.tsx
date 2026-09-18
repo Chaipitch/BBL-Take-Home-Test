@@ -18,19 +18,19 @@ import { PageHeader } from '../components/common/PageHeader'
 export function BookmarksPage() {
   const [params, setParams] = useSearchParams()
   const collectionId = params.get('collectionId') ?? ''
-  const q = params.get('q') ?? ''
+  const search = params.get('search') ?? ''
 
-  const bookmarks = useBookmarks({ collectionId: collectionId || undefined, q: q || undefined })
+  const bookmarks = useBookmarks({ collectionId: collectionId || undefined, search: search || undefined })
   const collections = useCollections(100)
   const deleteBookmark = useDeleteBookmark()
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<Bookmark | null>(null)
 
-  const updateFilters = (next: { collectionId: string; q: string }) => {
-    const search = new URLSearchParams()
-    if (next.collectionId) search.set('collectionId', next.collectionId)
-    if (next.q) search.set('q', next.q)
-    setParams(search)
+  const updateFilters = (next: { collectionId: string; search: string }) => {
+    const params = new URLSearchParams()
+    if (next.collectionId) params.set('collectionId', next.collectionId)
+    if (next.search) params.set('search', next.search)
+    setParams(params)
   }
 
   return (
@@ -43,14 +43,14 @@ export function BookmarksPage() {
           </Button>
         }
       />
-      <BookmarkFilters key={q} collectionId={collectionId} q={q} onChange={updateFilters} />
+      <BookmarkFilters key={search} collectionId={collectionId} search={search} onChange={updateFilters} />
       {bookmarks.isLoading && <LoadingState />}
       {bookmarks.error && <ErrorAlert error={bookmarks.error} />}
       {bookmarks.data && (
         <BookmarkList
           bookmarks={bookmarks.data.pages.flatMap((p) => p.data)}
           collections={collections.data?.pages.flatMap((p) => p.data) ?? []}
-          emptyText={collectionId || q ? 'No bookmarks match these filters.' : 'No bookmarks yet.'}
+          emptyText={collectionId || search ? 'No bookmarks match these filters.' : 'No bookmarks yet.'}
           onDelete={setDeleting}
         />
       )}

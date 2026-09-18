@@ -6,12 +6,13 @@ import type { Bookmark, BookmarkInput, Page } from './types'
 /** `collectionId`: a collection id, `none` for uncategorised, or undefined for all. */
 export interface BookmarkFilters {
   collectionId?: string
-  q?: string
+  /** Full-text search over title and notes (API `search=`, ADR-020c). */
+  search?: string
 }
 
 export const bookmarkKeys = {
   all: ['bookmarks'] as const,
-  list: (filters: BookmarkFilters) => [...bookmarkKeys.all, 'list', filters.collectionId ?? '', filters.q ?? ''] as const,
+  list: (filters: BookmarkFilters) => [...bookmarkKeys.all, 'list', filters.collectionId ?? '', filters.search ?? ''] as const,
   detail: (id: string) => [...bookmarkKeys.all, 'detail', id] as const,
 }
 
@@ -20,7 +21,7 @@ export function useBookmarks(filters: BookmarkFilters) {
   return useInfiniteQuery({
     queryKey: bookmarkKeys.list(filters),
     queryFn: ({ pageParam }) =>
-      api<Page<Bookmark>>('GET', '/bookmarks', { query: { cursor: pageParam, collectionId: filters.collectionId, q: filters.q } }),
+      api<Page<Bookmark>>('GET', '/bookmarks', { query: { cursor: pageParam, collectionId: filters.collectionId, search: filters.search } }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   })

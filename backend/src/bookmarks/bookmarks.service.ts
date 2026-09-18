@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
 import { ValidationFailedException } from '../common/errors.js';
-import { containsText } from '../common/filters.js';
+import { containsText, escapeLike } from '../common/filters.js';
 import { afterCursor, orderNewestFirst, toPage, type Page } from '../common/pagination.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { bookmarkSelect, type BookmarkDto } from './bookmark.select.js';
@@ -32,6 +32,7 @@ export class BookmarksService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(ownerId: string, query: ListBookmarksQuery): Promise<Page<BookmarkDto>> {
+    if (query.search !== undefined) return this.searchList(ownerId, query, query.search);
     const rows = await this.prisma.bookmark.findMany({
       where: {
         ownerId,
@@ -44,6 +45,37 @@ export class BookmarksService {
       take: query.limit + 1,
       select: bookmarkSelect,
     });
+    return toPage(rows, query.limit);
+  }
+
+  /**
+   * ADR-020c: Postgres full-text search over title + notes, using the GIN expression index from
+   * migration 20260918120000. Raw SQL because Prisma has no stable full-text filter for Postgres:
+   * every value is a bound parameter, and `ownerId` is applied exactly as in every other query.
+   * `websearch_to_tsquery` accepts arbitrary user input (quotes, OR, -exclusions) without throwing.
+   * Order stays newest-first, so keyset pagination is unchanged (no relevance ranking).
+   */
+  private async searchList(ownerId: string, query: ListBookmarksQuery, search: string): Promise<Page<BookmarkDto>> {
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`b."ownerId" = ${ownerId}::uuid`,
+      Prisma.sql`to_tsvector('english', coalesce(b."title", '') || ' ' || coalesce(b."notes", '')) @@ websearch_to_tsquery('english', ${search})`,
+    ];
+    if (query.collectionId === 'none') conditions.push(Prisma.sql`b."collectionId" IS NULL`);
+    else if (query.collectionId !== undefined) conditions.push(Prisma.sql`b."collectionId" = ${query.collectionId}::uuid`);
+    if (query.q !== undefined) conditions.push(Prisma.sql`b."title" ILIKE ${'%' + escapeLike(query.q) + '%'}`);
+    if (query.cursor) {
+      conditions.push(
+        Prisma.sql`(b."createdAt" < ${query.cursor.createdAt} OR (b."createdAt" = ${query.cursor.createdAt} AND b."id" < ${query.cursor.id}::uuid))`,
+      );
+    }
+
+    const rows = await this.prisma.$queryRaw<BookmarkDto[]>(Prisma.sql`
+      SELECT b."id", b."url", b."title", b."notes", b."collectionId", b."ownerId", b."createdAt", b."updatedAt"
+      FROM "Bookmark" b
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ORDER BY b."createdAt" DESC, b."id" DESC
+      LIMIT ${query.limit + 1}
+    `);
     return toPage(rows, query.limit);
   }
 

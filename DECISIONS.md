@@ -796,3 +796,9 @@ Docker → `/all` → search, each committed separately, with the full suites re
 - Debian slim, not alpine: the Prisma engines need glibc.
 - **Verified by running the stack**, not just building it: migrations applied on start, `GET /me` → 401 with `WWW-Authenticate: Bearer` and `application/problem+json`, nginx served `/shared` (SPA fallback), CORS allowed `http://localhost:3000`, and the built bundle contained the baked-in API URL.
 - Local development is unchanged; the containers sit behind the `app` compose profile.
+
+### Implementation notes (ADR-020b/c — `/all` page and full-text search)
+- **`/all`** reuses the existing endpoints (one request per collection + uncategorised) and `BookmarkList` with the delete action made optional; 4 tests, 4 mutation checks (dropped uncategorised section, missing "more collections" notice, unlinked collection heading, delete button leaking into the read-only overview).
+- **Search** is the only raw SQL in the app: bound parameters only, `ownerId` applied like everywhere else, covered by the same cross-user tests, plus two new entries in `.agent/mutants/backend-privacy.tsv` (owner filter, collection filter) — both caught. Hostile input tested (`' OR 1=1 --`, `'; DROP TABLE "Bookmark"; --`, tsquery operators, LIKE wildcards, emoji): `200`, data untouched.
+- **A test of mine passed for the wrong reason again.** "uses the full-text index" asserted on an `EXPLAIN` plan, but with a handful of rows Postgres rightly chooses a sequential scan. Rewritten to disable `enable_seqscan` and assert `Bookmark_search_idx` appears; verified by dropping the index in the test database (test fails) and recreating it.
+- Frontend `/bookmarks` now sends `search=` (titles **and** notes, label updated); the shared-collection page keeps `q` (title only).

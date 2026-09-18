@@ -37,5 +37,7 @@ export const listBookmarksQuerySchema = z.strictObject({
   /** A UUID, or `none` for uncategorised. */
   collectionId: z.union([z.literal('none'), z.uuid()]).optional(),
   q: z.string().trim().min(1).max(500).optional(),
+  /** Full-text search over title and notes (ADR-020c). Combinable with the other filters. */
+  search: z.string().trim().min(1).max(500).optional(),
 });
 export type ListBookmarksQuery = z.output<typeof listBookmarksQuerySchema>;

@@ -21,11 +21,11 @@ describe('/bookmarks', () => {
   it('filters come from the URL on load (ADR-018h)', async () => {
     const queries: string[] = []
     server.use(...handlers(queries))
-    renderRoute('/bookmarks?collectionId=none&q=postgres')
+    renderRoute('/bookmarks?collectionId=none&search=postgres')
 
     expect(await screen.findByText('Postgres tips')).toBeInTheDocument()
-    expect(queries).toEqual(['?collectionId=none&q=postgres'])
-    expect(screen.getByLabelText('Search titles')).toHaveValue('postgres')
+    expect(queries).toEqual(['?collectionId=none&search=postgres'])
+    expect(screen.getByLabelText('Search titles and notes')).toHaveValue('postgres')
   })
 
   it('choosing a collection updates the URL and refetches with collectionId', async () => {
@@ -44,14 +44,14 @@ describe('/bookmarks', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?collectionId=none'))
   })
 
-  it('search submits q to the URL', async () => {
+  it('search submits to the URL as search=', async () => {
     const queries: string[] = []
     server.use(...handlers(queries))
     const { user, router } = renderRoute('/bookmarks')
 
-    await user.type(await screen.findByLabelText('Search titles'), 'nest{Enter}')
-    await waitFor(() => expect(router.state.location.search).toBe('?q=nest'))
-    await waitFor(() => expect(queries).toContain('?q=nest'))
+    await user.type(await screen.findByLabelText('Search titles and notes'), 'nest{Enter}')
+    await waitFor(() => expect(router.state.location.search).toBe('?search=nest'))
+    await waitFor(() => expect(queries).toContain('?search=nest'))
   })
 
   it('shows API field errors on the form (e.g. unsafe URL rejected by the API)', async () => {

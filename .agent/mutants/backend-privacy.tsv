@@ -11,3 +11,5 @@ shares: create skips ownership check	backend/src/shares/shares.service.ts	    aw
 shares: unverified recipients allowed	backend/src/shares/shares.service.ts	where: { email: body.email, emailVerified: true }	where: { email: body.email }
 shared: list ignores the grantee filter	backend/src/shared/shared.service.ts	where: { ...sharedWith(userId), ...afterCursor(query.cursor) }	where: { ...afterCursor(query.cursor) }
 shared: get ignores the grantee filter	backend/src/shared/shared.service.ts	findFirst({ where: { id, ...sharedWith(userId) }	findFirst({ where: { id }
+search: raw query drops the owner filter	backend/src/bookmarks/bookmarks.service.ts	Prisma.sql`b."ownerId" = ${ownerId}::uuid`,	Prisma.sql`TRUE`,
+search: raw query ignores the collection filter	backend/src/bookmarks/bookmarks.service.ts	else if (query.collectionId !== undefined) conditions.push(Prisma.sql`b."collectionId" = ${query.collectionId}::uuid`);	

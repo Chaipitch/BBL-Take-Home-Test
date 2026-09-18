@@ -5,5 +5,10 @@
  * character is backslash, so escape backslash first, then the wildcards.
  */
 export function containsText(value: string) {
-  return { contains: value.replace(/[\\%_]/g, '\\$&'), mode: 'insensitive' as const };
+  return { contains: escapeLike(value), mode: 'insensitive' as const };
+}
+
+/** Escapes LIKE/ILIKE wildcards so user text matches literally (backslash is the escape character). */
+export function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
 }

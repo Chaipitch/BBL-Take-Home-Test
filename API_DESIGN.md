@@ -119,6 +119,7 @@ List responses:
 | `name` | `GET /collections` | case-insensitive *contains* on name; 1–200 chars |
 | `collectionId` | `GET /bookmarks` | a UUID → bookmarks in that collection; `none` → uncategorised only. Malformed → `400`. A UUID that isn't the caller's collection → `200` with an empty list (same as an empty collection of theirs) |
 | `q` | `GET /bookmarks`, `GET /collections/:id/bookmarks` | case-insensitive *contains* on **title** only; 1–500 chars |
+| `search` | `GET /bookmarks` | **full-text search over title and notes** (bonus, ADR-020c): Postgres `websearch_to_tsquery` with the `english` configuration, so stemming, `"quoted phrases"` and `-exclusions` work; 1–500 chars; combinable with `collectionId` and `q`; results stay newest-first (no relevance ranking) so paging is unchanged |
 
 - **Order:** newest first — `createdAt desc, id desc` (fixed; no `sort` parameter).
 - **Cursor pagination (keyset):** the cursor encodes the last item's `(createdAt, id)`; the next page is items strictly after it in the order above. Pages don't shift when items are added or removed between requests.
@@ -149,7 +150,7 @@ Known and accepted races [012l, 013d]: delete runs as *find → count → delete
 
 | Method & path | Body | Success | Errors |
 |---|---|---|---|
-| `GET /bookmarks` | — ; query `limit`, `cursor`, `collectionId`, `q` | `200` list of Bookmark | 400 (query) |
+| `GET /bookmarks` | — ; query `limit`, `cursor`, `collectionId`, `q`, `search` | `200` list of Bookmark | 400 (query) |
 | `POST /bookmarks` | `{ url, title, notes?, collectionId? }` | `201` Bookmark + `Location: /bookmarks/{id}` | 400 |
 | `GET /bookmarks/:id` | — | `200` Bookmark | 404 |
 | `PUT /bookmarks/:id` | `{ url, title, notes?, collectionId? }` | `200` Bookmark | 400, 404 |
@@ -219,6 +220,15 @@ them; kept as defence in depth and listed here rather than hidden):
   `P2003` mapping produce the same `400`. Removing **both** layers fails 3 tests.
 - the `ownerId` filter inside `listBookmarks` and the grantee filter inside the shared-bookmarks query —
   both are preceded by a 404 check that already restricts the collection.
+
+### Full-text search implementation note
+
+`search` is the only raw SQL in the app (Prisma has no stable Postgres full-text filter). Every value
+is a bound parameter, `ownerId` is applied exactly as in the ORM queries, and the same cross-user tests
+cover it; two mutation checks (`.agent/mutants/backend-privacy.tsv`) fail if the owner or collection
+filter is dropped. Hostile input (`' OR 1=1 --`, `'; DROP TABLE …`, tsquery operators, wildcards,
+emoji) is covered by tests: the request answers `200` and the data is untouched.
+Index: `Bookmark_search_idx`, a GIN expression index created in migration `20260918120000`.
 
 ## 9. Where the agent's first attempt was wrong
 
