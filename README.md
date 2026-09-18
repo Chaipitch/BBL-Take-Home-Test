@@ -4,7 +4,29 @@ Private read-later app: NestJS + Prisma + PostgreSQL API, React + Vite + MUI fro
 
 **Bearer token:** the API accepts the Auth0 **access token** for audience `https://bbl-candidate-test-api`. Access tokens are issued *for* an API (`aud` = this API); ID tokens prove a login to the client app, not authorisation to call an API (ADR-008, verified with real tokens in `docs/auth0/TENANT_FINDINGS.md`).
 
-Key documents: `API_DESIGN.md` (contract and how privacy is enforced) · `DECISIONS.md` (ADRs) · `CLAUDE.md` (agent rules) · `docs/API_MANUAL_TESTING.md` (Postman).
+## What to read first
+
+| Document | What's in it |
+|---|---|
+| `API_DESIGN.md` | The API contract, how the privacy invariant is enforced per layer with the test that proves it, **how to verify the claims yourself**, and 8 places the agent's first attempt was wrong |
+| `DECISIONS.md` | Every decision as a short ADR: options, what was chosen, what was traded away, **who decided**, and the corrections when the agent overstepped |
+| `AI_WORKFLOW.md` | How the work was actually done with the agent, including failures, recovery and real token usage |
+| `/.agent/README.md` | The three reusable capabilities (mutation check, privacy review, pre-commit hook) and what they caught |
+| `/transcripts/` | The real session log, redacted, plus a readable Markdown version |
+| `CLAUDE.md` | Rules a fresh agent session needs to produce on-spec code here |
+| `docs/API_MANUAL_TESTING.md`, `docs/FRONTEND_MANUAL_TESTING.md` | Manual checks with a real Auth0 login (Postman collection, browser checklist) |
+
+## Verification at a glance
+
+| Check | Command | Result |
+|---|---|---|
+| Backend unit | `npm test --prefix backend` | 64 passing |
+| Backend e2e (real Postgres, ≥2 users) | `npm run test:e2e --prefix backend` | 144 passing |
+| Frontend | `npm test --prefix frontend` | 41 passing |
+| Do the tests actually protect the rules? | `.agent/scripts/mutation-check.sh --file .agent/mutants/backend-auth.tsv` (and `backend-privacy.tsv`) | 5 + 9 mutants, 0 unexpected |
+| Real Auth0 tokens against the running API | `node scripts/inspect-tokens.mjs --api http://localhost:4000/me` | access token 200, ID token 401, no token 401 |
+| Manual API (71 requests) | `docs/API_MANUAL_TESTING.md` | not yet run by the developer |
+| Manual frontend | `docs/FRONTEND_MANUAL_TESTING.md` | sections A–E passed 2026-09-17; F (sharing) pending |
 
 ## Prerequisites
 - Node ≥ 22.18 and npm (developed on Node 26)
@@ -88,19 +110,31 @@ Real login and full-stack checks: `docs/FRONTEND_MANUAL_TESTING.md`.
 
 Sharing as an owner: the **Share** button on `/collections/:id` opens a dialog to share by email and revoke access.
 
-## Status
-| Area | State |
-|---|---|
-| Auth0 tenant inspection, real-token verification | done |
-| Backend API: auth guard, `/me`, collections, bookmarks, sharing, seed | done: 64 unit + 144 e2e tests |
-| Postman manual test collection | done (not yet run by the developer) |
-| Frontend: login, collections and bookmarks pages | done: 27 tests; real-login checklist passed (reload stays signed in) |
-| Frontend: sharing UI (share/revoke dialog, Shared with me pages) | done: 41 frontend tests; manual section F not yet run |
-| `/.agent/` capability, `AI_WORKFLOW.md`, transcripts | not started |
-| Bonus (Docker, CI, `/all`, full-text search) | not started |
+## Completed vs skipped
 
-### Skipped / deliberately not done (backend)
-- **Rate limiting** on share creation: account enumeration via `recipient_not_found` is an accepted trade-off (ADR-006c).
-- **ETags / optimistic concurrency:** last write wins (ADR-012m).
-- **OpenAPI/Swagger:** contract is written by hand in `API_DESIGN.md` (ADR-012m).
-- **Delete race:** a bookmark added in the milliseconds between the count and the delete of its collection is deleted too (ADR-013d).
+**Completed**
+
+| Brief | Where |
+|---|---|
+| §3.1 Backend: NestJS + TypeScript, OIDC on every route, Authorization Code + PKCE, both resources with get/list/create/PUT/PATCH/delete/filtering, `/me`, `GET /collections/:id/bookmarks`, SQL via Prisma, seed for ≥2 users | `backend/`, `API_DESIGN.md` |
+| §3.2 Frontend: React + Vite + TS, React Router 8, MUI 9, `/collections` and `/bookmarks` with all listed actions | `frontend/` |
+| §3.3 The under-specified requirement | Decided and shipped: cascade delete with confirmation (ADR-005/005b) and read-only sharing to a verified user (ADR-006, ADR-015), UI in ADR-019 |
+| §5 Deliverables: agent rules file, `/.agent/`, `API_DESIGN.md`, `DECISIONS.md`, automated tests, `AI_WORKFLOW.md`, `/transcripts/`, README, real commit history | this repo (46+ commits, no squashing) |
+
+**Skipped, and why**
+
+| Not done | Why |
+|---|---|
+| **CI pipeline** (bonus §3.4) | Deferred by the developer for now. The checks a pipeline would run already exist as commands (`npm test`, `npm run test:e2e`, `npm run lint`, `tsc`, the mutation sets) and the pre-commit hook runs the fast ones. |
+| **Dockerfiles** (bonus) | Not attempted; Postgres runs in Docker, the apps run locally per the README. |
+| **`/all` page** (bonus) | Not attempted. |
+| **Full-text search** (bonus) | Not attempted; `?q=` is a case-insensitive title filter with escaped wildcards, which the brief counts as core filtering, not the bonus. |
+| **Rate limiting** on share creation | Account enumeration via `recipient_not_found` is an accepted, documented trade-off (ADR-006c). |
+| **ETags / optimistic concurrency** | Last write wins (ADR-012m). |
+| **OpenAPI/Swagger** | The contract is written by hand in `API_DESIGN.md` (ADR-012m). |
+| **Refresh tokens** | Not requested; tokens live in memory and renew silently (ADR-018d), verified by a real login. |
+| **Playwright end-to-end UI tests** | Frontend tests mock the API and Auth0; the real login path is covered by a manual checklist instead (ADR-018m). |
+
+**Known trade-offs that are live in the code** — `DECISIONS.md` has the full list; the sharp ones are the
+delete race (ADR-013d), account enumeration on share (ADR-006c), and three documented equivalent
+mutants listed in `API_DESIGN.md` §8.
