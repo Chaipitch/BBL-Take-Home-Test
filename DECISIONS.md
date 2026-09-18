@@ -36,7 +36,7 @@ Short ADRs for calls the brief left open.
 | 016 | Seed data (BBL-16) | Accepted — pre-approved | same |
 | 017 | Route-wide authentication sweep test (BBL-18) | Accepted — pre-approved | same |
 | 018 | Frontend architecture: scaffold, routing, auth, data, UI flows, tests (BBL-19–22) | Accepted | Developer (all agent recommendations) |
-| 019 | Sharing UI: share/revoke and shared-with-me pages (BBL-23) | **Proposed** — awaiting developer | — |
+| 019 | Sharing UI: share/revoke and shared-with-me pages (BBL-23) | Accepted | Developer (all agent recommendations) |
 
 ---
 
@@ -706,7 +706,7 @@ MUI 9 with `CssBaseline`, default theme plus a small palette, Emotion (MUI's def
 - **ADR-018d reload outcome (observed):** reloading a page **stays signed in** without a visible redirect, so the SDK's silent renewal (hidden iframe, `prompt=none`) works on this tenant from `http://localhost:3000`. Tokens remain in memory only. Caveat: this depends on the browser allowing Auth0's cookie in that iframe; a browser that blocks third-party cookies would fall back to a quick redirect through Auth0 (already handled by `RequireAuth`).
 
 ## ADR-019 — Sharing UI (BBL-23)
-**Status.** **Proposed** — awaiting developer decision. Nothing implemented.
+**Status.** Accepted — developer, 2026-09-18: all recommendations.
 **Inputs.** API from ADR-015 (`/collections/:id/shares`, `/shared/collections`…); recipient data has `ownerEmail`, `sharedAt`, no `ownerId`; recipients are read-only (ADR-006f); patterns from ADR-018 (routes as pages, TanStack Query hooks, dialogs mounted only while open, components under `src/components/<area>/`).
 **Brief check.** §3.3 leaves sharing to us; the two required pages are unchanged.
 
