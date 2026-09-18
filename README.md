@@ -110,6 +110,18 @@ Real login and full-stack checks: `docs/FRONTEND_MANUAL_TESTING.md`.
 
 Sharing as an owner: the **Share** button on `/collections/:id` opens a dialog to share by email and revoke access.
 
+## Running it in containers (bonus)
+
+```bash
+docker compose --profile app up --build     # postgres + API (:4000) + nginx-served frontend (:3000)
+docker compose stop api web                 # back to the local dev workflow
+```
+- The API container applies `prisma migrate deploy` on start; seeding stays a manual step (`npx prisma db seed`).
+- **Vite inlines `VITE_*` at build time**, so the frontend image is built with `VITE_API_BASE_URL=http://localhost:4000` (a compose build arg). A different API URL means rebuilding the image, not just changing an environment variable.
+- The default local workflow (`docker compose up -d postgres` + `npm run start:dev` / `npm run dev`) is unchanged; the app containers are behind the `app` profile.
+- API image ~908 MB: it carries the Prisma CLI and query engines so the container can migrate itself. Moving migrations into a separate one-shot container would cut ~210 MB; not done, since the bonus is lightly weighted.
+- Verified by running it: migrations applied, `GET /me` → 401 with `WWW-Authenticate` and `application/problem+json`, `/shared` deep link served by nginx, CORS allowing `http://localhost:3000`, and the built bundle pointing at the API.
+
 ## Completed vs skipped
 
 **Completed**
@@ -119,6 +131,7 @@ Sharing as an owner: the **Share** button on `/collections/:id` opens a dialog t
 | §3.1 Backend: NestJS + TypeScript, OIDC on every route, Authorization Code + PKCE, both resources with get/list/create/PUT/PATCH/delete/filtering, `/me`, `GET /collections/:id/bookmarks`, SQL via Prisma, seed for ≥2 users | `backend/`, `API_DESIGN.md` |
 | §3.2 Frontend: React + Vite + TS, React Router 8, MUI 9, `/collections` and `/bookmarks` with all listed actions | `frontend/` |
 | §3.3 The under-specified requirement | Decided and shipped: cascade delete with confirmation (ADR-005/005b) and read-only sharing to a verified user (ADR-006, ADR-015), UI in ADR-019 |
+| §3.4 Bonus: Dockerfiles for backend and frontend | `backend/Dockerfile`, `frontend/Dockerfile`, compose `app` profile |
 | §5 Deliverables: agent rules file, `/.agent/`, `API_DESIGN.md`, `DECISIONS.md`, automated tests, `AI_WORKFLOW.md`, `/transcripts/`, README, real commit history | this repo (46+ commits, no squashing) |
 
 **Skipped, and why**
@@ -126,7 +139,7 @@ Sharing as an owner: the **Share** button on `/collections/:id` opens a dialog t
 | Not done | Why |
 |---|---|
 | **CI pipeline** (bonus §3.4) | Deferred by the developer for now. The checks a pipeline would run already exist as commands (`npm test`, `npm run test:e2e`, `npm run lint`, `tsc`, the mutation sets) and the pre-commit hook runs the fast ones. |
-| **Dockerfiles** (bonus) | Not attempted; Postgres runs in Docker, the apps run locally per the README. |
+
 | **`/all` page** (bonus) | Not attempted. |
 | **Full-text search** (bonus) | Not attempted; `?q=` is a case-insensitive title filter with escaped wildcards, which the brief counts as core filtering, not the bonus. |
 | **Rate limiting** on share creation | Account enumeration via `recipient_not_found` is an accepted, documented trade-off (ADR-006c). |

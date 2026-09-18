@@ -37,7 +37,7 @@ Short ADRs for calls the brief left open.
 | 017 | Route-wide authentication sweep test (BBL-18) | Accepted — pre-approved | same |
 | 018 | Frontend architecture: scaffold, routing, auth, data, UI flows, tests (BBL-19–22) | Accepted | Developer (all agent recommendations) |
 | 019 | Sharing UI: share/revoke and shared-with-me pages (BBL-23) | Accepted | Developer (all agent recommendations) |
-| 020 | Bonuses: Dockerfiles, `/all` page, full-text search (BBL-29) | **Proposed** — awaiting developer | — |
+| 020 | Bonuses: Dockerfiles, `/all` page, full-text search (BBL-29) | Accepted | Developer (all agent recommendations) |
 
 ---
 
@@ -759,7 +759,7 @@ Share success clears the input and lists the share with a lower-cased email; eac
 - Frontend tests: 41 (27 + 14 for sharing).
 
 ## ADR-020 — Bonuses: Docker, `/all` page, full-text search (BBL-29)
-**Status.** **Proposed** — awaiting developer decision. CI is deliberately out of scope (developer deferred it).
+**Status.** Accepted — developer, 2026-09-18: all recommendations. CI is deliberately out of scope (developer deferred it).
 **Brief §3.4.** "Dockerfile — containerise the backend, the frontend, or both · An `/all` page — a third frontend page showing collections together with the bookmarks inside them · Full-text search — search across bookmark titles and notes." Bonuses are lightly weighted and must not put the core at risk.
 
 ### 020a — Containers
@@ -790,3 +790,9 @@ Today `?q=` is a case-insensitive *contains* filter on **title** (ADR-012i), wit
 
 ### 020d — Order of work and safety
 Docker → `/all` → search, each committed separately, with the full suites re-run after each. If any of them would require weakening an existing rule or test, stop and report instead.
+
+### Implementation notes (ADR-020a — containers)
+- First build copied the build stage's whole `node_modules` → **1.02 GB**. Runtime now installs production dependencies only (`npm ci --omit=dev`) and `prisma` moved from devDependencies to dependencies, because the container runs `prisma migrate deploy` on start → **908 MB**. The remainder is mostly the Prisma CLI + engines (213 MB) and the Node base image; a separate one-shot migration container would cut ~210 MB and was judged not worth it for a bonus.
+- Debian slim, not alpine: the Prisma engines need glibc.
+- **Verified by running the stack**, not just building it: migrations applied on start, `GET /me` → 401 with `WWW-Authenticate: Bearer` and `application/problem+json`, nginx served `/shared` (SPA fallback), CORS allowed `http://localhost:3000`, and the built bundle contained the baked-in API URL.
+- Local development is unchanged; the containers sit behind the `app` compose profile.
