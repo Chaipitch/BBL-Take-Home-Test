@@ -1,6 +1,6 @@
 # Frontend manual testing (real Auth0 login)
 
-> **Last run: 2026-09-17 by the developer: all sections A–E passed.**
+> **Last run: 2026-09-17 by the developer: sections A–E passed. Section F (sharing) added 2026-09-18, not yet run.**
 
 Automated frontend tests (`cd frontend && npm test`) mock Auth0 at the hook boundary (ADR-018m). This checklist covers what they can't: the real login, tokens, and the full stack.
 
@@ -61,4 +61,10 @@ Open **http://localhost:3000** in a normal browser window with DevTools → **Ne
 - [ ] `http://localhost:3000/bookmarks/<bBookmarkId>` → same message.
 - [ ] `http://localhost:3000/bookmarks?collectionId=<bCollectionId>` → "No bookmarks match these filters."
 
-Sharing pages (`/shared`) are not built yet (BBL-23).
+### F. Sharing (BBL-23; seed gives user B a collection shared with you)
+- [ ] Nav shows **Shared with me** → `/shared` lists "Team reading list", "Shared by user-b@example.com".
+- [ ] Open it: **Read-only** chip, owner email, bookmarks with notes shown inline, **no** Edit/Delete/Rename/Share/Add buttons, and bookmark titles are not links to `/bookmarks/:id`.
+- [ ] Search inside it (e.g. "twelve") filters and the URL gets `?q=`.
+- [ ] Open one of your own collections → **Share** → enter `user-c@example.com` → it appears under "Shared with"; entering it again → "already shared with that person"; `nobody@example.com` → "No account with a verified email matches this address."; your own address → "You can't share a collection with yourself."
+- [ ] **Stop sharing** asks for confirmation, then the row disappears.
+- [ ] Optional cross-check: `docker exec bbl-bookmarks-postgres psql -U bookmarks -d bookmarks -c 'select count(*) from "CollectionShare"'` changes as expected.

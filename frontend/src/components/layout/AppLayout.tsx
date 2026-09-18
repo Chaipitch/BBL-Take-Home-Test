@@ -24,6 +24,9 @@ export function AppLayout() {
           <Button component={NavLink} to="/bookmarks" sx={navButtonSx}>
             Bookmarks
           </Button>
+          <Button component={NavLink} to="/shared" sx={navButtonSx}>
+            Shared with me
+          </Button>
           <Box sx={{ flexGrow: 1 }} />
           {me.data?.email && (
             <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>

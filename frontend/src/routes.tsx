@@ -7,6 +7,8 @@ import { CallbackPage } from './pages/CallbackPage'
 import { CollectionDetailPage } from './pages/CollectionDetailPage'
 import { CollectionsPage } from './pages/CollectionsPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { SharedCollectionPage } from './pages/SharedCollectionPage'
+import { SharedCollectionsPage } from './pages/SharedCollectionsPage'
 
 /** ADR-018g. Everything except /callback requires login. Exported for tests (createMemoryRouter). */
 export const routes: RouteObject[] = [
@@ -23,6 +25,8 @@ export const routes: RouteObject[] = [
       { path: '/collections/:id', element: <CollectionDetailPage /> },
       { path: '/bookmarks', element: <BookmarksPage /> },
       { path: '/bookmarks/:id', element: <BookmarkDetailPage /> },
+      { path: '/shared', element: <SharedCollectionsPage /> },
+      { path: '/shared/:id', element: <SharedCollectionPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

@@ -82,7 +82,11 @@ Real login and full-stack checks: `docs/FRONTEND_MANUAL_TESTING.md`.
 | `/collections/:id` | view one: its bookmarks, rename, add bookmark, delete |
 | `/bookmarks` | list, filter by collection (incl. uncategorised) and title, create, delete; filters in the URL |
 | `/bookmarks/:id` | details, edit, delete |
+| `/shared` | collections other people shared with you (read-only) |
+| `/shared/:id` | a shared collection: owner email, Read-only chip, bookmarks with notes, title search |
 | `/callback` | Auth0 redirect target |
+
+Sharing as an owner: the **Share** button on `/collections/:id` opens a dialog to share by email and revoke access.
 
 ## Status
 | Area | State |
@@ -91,7 +95,7 @@ Real login and full-stack checks: `docs/FRONTEND_MANUAL_TESTING.md`.
 | Backend API: auth guard, `/me`, collections, bookmarks, sharing, seed | done: 64 unit + 144 e2e tests |
 | Postman manual test collection | done (not yet run by the developer) |
 | Frontend: login, collections and bookmarks pages | done: 27 tests; real-login checklist passed (reload stays signed in) |
-| Frontend: shared collections UI (BBL-23) | not started |
+| Frontend: sharing UI (share/revoke dialog, Shared with me pages) | done: 41 frontend tests; manual section F not yet run |
 | `/.agent/` capability, `AI_WORKFLOW.md`, transcripts | not started |
 | Bonus (Docker, CI, `/all`, full-text search) | not started |
 

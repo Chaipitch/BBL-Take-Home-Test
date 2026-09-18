@@ -53,3 +53,31 @@ export interface BookmarkInput {
   notes: string | null
   collectionId: string | null
 }
+
+/** Owner view of a share (API_DESIGN sharing section). No recipient user id. */
+export interface Share {
+  id: string
+  collectionId: string
+  email: string | null
+  createdAt: string
+}
+
+/** Recipient view: no ownerId, no other users' ids. */
+export interface SharedCollection {
+  id: string
+  name: string
+  ownerEmail: string | null
+  sharedAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SharedBookmark {
+  id: string
+  url: string
+  title: string
+  notes: string | null
+  collectionId: string
+  createdAt: string
+  updatedAt: string
+}

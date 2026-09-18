@@ -749,3 +749,10 @@ MUI 9 with `CssBaseline`, default theme plus a small palette, Emotion (MUI's def
 
 ### 019g — Tests (MSW + mocked Auth0)
 Share success clears the input and lists the share with a lower-cased email; each 019c error mapping; revoke asks for confirmation and removes the row; `/shared` shows the owner email and **no** rename/delete buttons; `/shared/:id` shows notes and the Read-only chip, **no** edit/delete/add buttons and no links to `/bookmarks/:id`; unsafe URL still text-only; not-shared → 404 message; nav contains "Shared with me". Mutation-check afterwards. Manual checklist additions for a real login (seed: B shares "Team reading list" with the candidate).
+
+### Implementation notes (ADR-019)
+- **Read-only is structural in the UI too:** shared pages render no write controls, and bookmark titles are plain text there because `/bookmarks/:id` is an owner route that correctly 404s for a recipient. Tests assert no link points at an owner detail route.
+- **Sloppy line caught in self-review:** the share dialog chose its alert severity with `error instanceof Error ? 'warning' : 'error'`, which is always true. Replaced with `isExpectedShareProblem()` (recipient not found / already shared / ambiguous → warning; anything else → error).
+- **A test of mine was wrong, not the code:** the "no owner links" assertion also matched the app bar's Bookmarks nav link. Narrowed to detail routes.
+- **Mutation checks (10, all caught):** generic message instead of `recipient_not_found` text; self-share field error unmapped; revoke without confirmation; email field not cleared; notes hidden from recipients; titles linking to owner pages; owner email hidden; Read-only chip removed; search not written to the URL; nav item removed.
+- Frontend tests: 41 (27 + 14 for sharing).

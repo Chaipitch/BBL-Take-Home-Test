@@ -10,6 +10,7 @@ import { BookmarkFormDialog } from '../components/bookmarks/BookmarkFormDialog'
 import { BookmarkList } from '../components/bookmarks/BookmarkList'
 import { CollectionFormDialog } from '../components/collections/CollectionFormDialog'
 import { DeleteCollectionDialog } from '../components/collections/DeleteCollectionDialog'
+import { ShareDialog } from '../components/shares/ShareDialog'
 import { ConfirmDialog } from '../components/common/ConfirmDialog'
 import { ErrorAlert } from '../components/common/ErrorAlert'
 import { LoadingState } from '../components/common/LoadingState'
@@ -25,6 +26,7 @@ export function CollectionDetailPage() {
   const deleteBookmark = useDeleteBookmark()
   const [renaming, setRenaming] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [deletingCollection, setDeletingCollection] = useState(false)
   const [deletingBookmark, setDeletingBookmark] = useState<Bookmark | null>(null)
 
@@ -45,6 +47,7 @@ export function CollectionDetailPage() {
         actions={
           <>
             <Button onClick={() => setRenaming(true)}>Rename</Button>
+            <Button onClick={() => setSharing(true)}>Share</Button>
             <Button color="error" onClick={() => setDeletingCollection(true)}>
               Delete
             </Button>
@@ -66,6 +69,7 @@ export function CollectionDetailPage() {
       )}
       <LoadMoreButton hasMore={bookmarks.hasNextPage} loading={bookmarks.isFetchingNextPage} onClick={() => void bookmarks.fetchNextPage()} />
 
+      {sharing && <ShareDialog collection={collection.data} onClose={() => setSharing(false)} />}
       {renaming && <CollectionFormDialog collection={collection.data} onClose={() => setRenaming(false)} onSaved={() => setRenaming(false)} />}
       {adding && <BookmarkFormDialog defaultCollectionId={id} onClose={() => setAdding(false)} onSaved={() => setAdding(false)} />}
       {deletingCollection && (
