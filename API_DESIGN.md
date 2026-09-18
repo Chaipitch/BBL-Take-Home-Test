@@ -198,7 +198,29 @@ Rules: recipient = existing user with a verified email, matched trimmed + lower-
 | Input validation | Every body/query goes through a zod schema via `@ValidBody`/`@ValidQuery`; strict objects; a test inspects every registered route and fails on a bare `@Body`/`@Query` (Nest's pipe silently skips params without a schema) | Implemented | `test/api-guardrails.e2e-spec.ts` (self-tested; mutation: bare `@Body()` fails it) |
 | Profile/email | Email for sharing comes only from Auth0 `/userinfo` server-side, verified flag required | Implemented | `test/users.e2e-spec.ts` |
 
-## 8. Where the agent's first attempt was wrong
+## 8. How to check these claims yourself
+
+```bash
+docker compose up -d postgres
+cd backend && npm ci && npx prisma generate && npx prisma migrate deploy
+npm test          # 64 unit tests: token verification, /userinfo client, error mapping
+npm run test:e2e  # 144 e2e tests against Postgres: every route, two users, sharing
+```
+Then attack the tests themselves (`/.agent/README.md`):
+```bash
+.agent/scripts/mutation-check.sh --file .agent/mutants/backend-auth.tsv      # 5 mutants, 0 unexpected
+.agent/scripts/mutation-check.sh --file .agent/mutants/backend-privacy.tsv   # 9 mutants, 0 unexpected
+```
+Manual checks with a real Auth0 login: `docs/API_MANUAL_TESTING.md` (71-request Postman collection).
+
+**Known equivalent mutants** (removing the rule changes no observable behaviour, so no test can cover
+them; kept as defence in depth and listed here rather than hidden):
+- the app-level "is this collection mine?" check before writing a bookmark — the composite FK plus the
+  `P2003` mapping produce the same `400`. Removing **both** layers fails 3 tests.
+- the `ownerId` filter inside `listBookmarks` and the grantee filter inside the shared-bookmarks query —
+  both are preceded by a 404 check that already restricts the collection.
+
+## 9. Where the agent's first attempt was wrong
 
 1. **Auth errors: outage reported as "invalid token".** A first design mapped jose errors to 401; jose throws a *generic* `JOSEError` when the JWKS endpoint returns non-200, so an Auth0 outage would have logged users out. Found by reading jose's source; fixed by classifying explicit error codes (401 vs 503). [ADR-010 notes]
 2. **Test helper made negative tests use valid tokens.** `SignJWT` setters overwrote the "bad" claims; 4 rejection tests failed and one acceptance test passed for the wrong reason. Found on first run; payload now built as one object. Mutation testing then showed the RS256 pin was untested → added a PS256 case. [ADR-010 notes]

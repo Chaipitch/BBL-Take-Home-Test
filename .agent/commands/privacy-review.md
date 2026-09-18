@@ -24,7 +24,10 @@ owner shared read-only (ADR-006), served only under `/shared/...`.
 >
 > Finish with: `PASS` plus the protecting tests, or `FIX` plus the smallest change needed.
 
-**Why it exists.** Used before each endpoint commit. It caught, among others: a bookmark filter that
-would have needed a 404 instead of an empty page; `recipient_not_found` leaking through someone
-else's collection (now the ownership check runs first); and it forces the "which test fails?" question
-that produced the mutation checks recorded in `DECISIONS.md`.
+**Why it exists.** These questions are the ones that shaped the privacy-sensitive designs in
+`DECISIONS.md`: question 3 is why "doesn't exist", "not yours" and a malformed id return byte-identical
+404s; question 4 is why a filter by someone else's `collectionId` returns an empty page instead of a
+404, and why share creation checks collection ownership *before* looking at the email; question 7 is the
+one that produced the mutation checks — it is also the question the agent answered wrongly twice
+(tests that passed for the wrong reason), which is why running `/mutation-check` is the required
+evidence rather than an opinion.
