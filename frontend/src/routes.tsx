@@ -2,6 +2,7 @@ import { Navigate, type RouteObject } from 'react-router'
 import { RequireAuth } from './auth/RequireAuth'
 import { AppLayout } from './components/layout/AppLayout'
 import { BookmarkDetailPage } from './pages/BookmarkDetailPage'
+import { AllPage } from './pages/AllPage'
 import { BookmarksPage } from './pages/BookmarksPage'
 import { CallbackPage } from './pages/CallbackPage'
 import { CollectionDetailPage } from './pages/CollectionDetailPage'
@@ -25,6 +26,7 @@ export const routes: RouteObject[] = [
       { path: '/collections/:id', element: <CollectionDetailPage /> },
       { path: '/bookmarks', element: <BookmarksPage /> },
       { path: '/bookmarks/:id', element: <BookmarkDetailPage /> },
+      { path: '/all', element: <AllPage /> },
       { path: '/shared', element: <SharedCollectionsPage /> },
       { path: '/shared/:id', element: <SharedCollectionPage /> },
       { path: '*', element: <NotFoundPage /> },

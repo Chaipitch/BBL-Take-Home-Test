@@ -24,6 +24,9 @@ export function AppLayout() {
           <Button component={NavLink} to="/bookmarks" sx={navButtonSx}>
             Bookmarks
           </Button>
+          <Button component={NavLink} to="/all" sx={navButtonSx}>
+            All
+          </Button>
           <Button component={NavLink} to="/shared" sx={navButtonSx}>
             Shared with me
           </Button>

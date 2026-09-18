@@ -104,6 +104,7 @@ Real login and full-stack checks: `docs/FRONTEND_MANUAL_TESTING.md`.
 | `/collections/:id` | view one: its bookmarks, rename, add bookmark, delete |
 | `/bookmarks` | list, filter by collection (incl. uncategorised) and title, create, delete; filters in the URL |
 | `/bookmarks/:id` | details, edit, delete |
+| `/all` | bonus: every collection with its bookmarks, plus uncategorised (read-only overview) |
 | `/shared` | collections other people shared with you (read-only) |
 | `/shared/:id` | a shared collection: owner email, Read-only chip, bookmarks with notes, title search |
 | `/callback` | Auth0 redirect target |
@@ -132,6 +133,7 @@ docker compose stop api web                 # back to the local dev workflow
 | §3.2 Frontend: React + Vite + TS, React Router 8, MUI 9, `/collections` and `/bookmarks` with all listed actions | `frontend/` |
 | §3.3 The under-specified requirement | Decided and shipped: cascade delete with confirmation (ADR-005/005b) and read-only sharing to a verified user (ADR-006, ADR-015), UI in ADR-019 |
 | §3.4 Bonus: Dockerfiles for backend and frontend | `backend/Dockerfile`, `frontend/Dockerfile`, compose `app` profile |
+| §3.4 Bonus: `/all` page | `frontend/src/pages/AllPage.tsx` |
 | §5 Deliverables: agent rules file, `/.agent/`, `API_DESIGN.md`, `DECISIONS.md`, automated tests, `AI_WORKFLOW.md`, `/transcripts/`, README, real commit history | this repo (46+ commits, no squashing) |
 
 **Skipped, and why**
@@ -140,7 +142,6 @@ docker compose stop api web                 # back to the local dev workflow
 |---|---|
 | **CI pipeline** (bonus §3.4) | Deferred by the developer for now. The checks a pipeline would run already exist as commands (`npm test`, `npm run test:e2e`, `npm run lint`, `tsc`, the mutation sets) and the pre-commit hook runs the fast ones. |
 
-| **`/all` page** (bonus) | Not attempted. |
 | **Full-text search** (bonus) | Not attempted; `?q=` is a case-insensitive title filter with escaped wildcards, which the brief counts as core filtering, not the bonus. |
 | **Rate limiting** on share creation | Account enumeration via `recipient_not_found` is an accepted, documented trade-off (ADR-006c). |
 | **ETags / optimistic concurrency** | Last write wins (ADR-012m). |

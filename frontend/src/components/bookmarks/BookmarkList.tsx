@@ -9,7 +9,8 @@ export interface BookmarkListProps {
   /** For showing the collection name; omit on a collection's own page. */
   collections?: Collection[]
   emptyText?: string
-  onDelete: (bookmark: Bookmark) => void
+  /** Omit for read-only contexts (e.g. the /all overview). */
+  onDelete?: (bookmark: Bookmark) => void
 }
 
 export function BookmarkList({ bookmarks, collections, emptyText = 'No bookmarks.', onDelete }: BookmarkListProps) {
@@ -27,14 +28,16 @@ export function BookmarkList({ bookmarks, collections, emptyText = 'No bookmarks
             divider
             alignItems="flex-start"
             secondaryAction={
-              <IconButton edge="end" aria-label={`Delete ${bookmark.title}`} onClick={() => onDelete(bookmark)}>
-                <DeleteIcon />
-              </IconButton>
+              onDelete && (
+                <IconButton edge="end" aria-label={`Delete ${bookmark.title}`} onClick={() => onDelete(bookmark)}>
+                  <DeleteIcon />
+                </IconButton>
+              )
             }
           >
             <ListItemText
               disableTypography
-              sx={{ pr: 4 }}
+              sx={{ pr: onDelete ? 4 : 0 }}
               primary={
                 <Stack direction="row" sx={{ alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                   <Link component={RouterLink} to={`/bookmarks/${bookmark.id}`} variant="subtitle1" underline="hover">
