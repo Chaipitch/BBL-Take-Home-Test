@@ -15,7 +15,7 @@ Private read-later app: NestJS + Prisma + PostgreSQL API, React + Vite + MUI fro
 | `/transcripts/` | The real session log, redacted, plus a readable Markdown version |
 | `CLAUDE.md` | Rules a fresh agent session needs to produce on-spec code here |
 | `docs/API_MANUAL_TESTING.md`, `docs/FRONTEND_MANUAL_TESTING.md` | Manual checks with a real Auth0 login (Postman collection, browser checklist) |
-| `docs/SECOND_REAL_USER.md` | How to test with a second real Auth0 login (the app has no user-management screen: users appear on first sign-in) |
+| `docs/SECOND_REAL_USER.md` | Adding users: a tool for real Auth0 accounts, and one for local app users (the app has no user-management screen — users appear on first sign-in) |
 
 ## Verification at a glance
 
@@ -63,8 +63,10 @@ npm run build
 
 ### Users
 There is no "create user" endpoint or screen: identity comes from Auth0 and a `User` row is created on
-the first authenticated request (ADR-007, ADR-011). Testing with a second real account:
-`docs/SECOND_REAL_USER.md`. The seeded users are database-only and cannot log in.
+the first authenticated request (ADR-007, ADR-011). Two tools add users (`docs/SECOND_REAL_USER.md`):
+`scripts/create-auth0-user.mjs` creates real Auth0 accounts that can log in (you type the password),
+and `backend/scripts/create-app-users.ts` creates any number of local app users with verified emails
+for data and sharing tests (they cannot log in).
 
 ### Seed data
 `npx prisma db seed` (ADR-016):

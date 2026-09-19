@@ -1,11 +1,46 @@
-# Testing with a second real user
+# Adding users
 
 The app has **no user-management screen by design**: identity lives in Auth0, and the API creates a
-user row the first time someone signs in (ADR-007, ADR-011). "Adding a user" therefore means giving a
-second person an Auth0 login; everything else happens automatically.
+user row the first time someone signs in (ADR-007, ADR-011). So there are two ways to add users, and
+two tools:
 
-The seeded users (`user-b@example.com`, `user-c@example.com`) are database-only. They are real share
-recipients and real test subjects, but they cannot log in — their Auth0 identities are invented.
+| Need | Tool | Can log in? |
+|---|---|---|
+| People who sign into the UI | `node scripts/create-auth0-user.mjs --email "you+test{n}@gmail.com" --count 3` | **Yes**, after verifying their email |
+| Test data, share recipients, many users fast | `cd backend && npx tsx scripts/create-app-users.ts --count 5 --with-data` | No (their Auth0 identities are invented) |
+
+The seeded users (`user-b@example.com`, `user-c@example.com`) are the second kind.
+
+## Creating real Auth0 accounts
+
+```bash
+node scripts/create-auth0-user.mjs --email "you+test1@gmail.com"                      # one account
+node scripts/create-auth0-user.mjs --email "you+test{n}@gmail.com" --count 5 \
+                                   --name "Tester {n}"                                # five accounts
+echo "$PASSWORD" | node scripts/create-auth0-user.mjs --email you+ci@gmail.com --password-stdin
+```
+- You type the password; the script never stores, logs or echoes it, and never takes it from the command line.
+- Accounts are created in **Bangkok Bank's tenant** through its public sign-up endpoint. Use plus-addressed
+  versions of an inbox you control, so you receive Auth0's verification mail.
+- **Verify each address** before using it as a share recipient: an unverified email answers
+  `404 recipient_not_found` (ADR-006b), which is correct behaviour.
+- The app needs nothing else: signing in creates the `User` row.
+
+## Creating app users locally (no login)
+
+```bash
+cd backend
+npx tsx scripts/create-app-users.ts --count 5                                   # five verified users
+npx tsx scripts/create-app-users.ts --count 2 --prefix demo --with-data \
+      --share-to candidate@test.com                                             # + data + shares to you
+```
+- Idempotent per `--prefix`: re-running updates instead of duplicating.
+- `--with-data` gives each user a collection with two bookmarks plus one uncategorised bookmark.
+- `--share-to <email>` shares each new collection with an existing **verified** user, so their
+  "Shared with me" page has content; it refuses unknown or unverified recipients.
+- Remove them again with, for example:
+  `docker exec bbl-bookmarks-postgres psql -U bookmarks -d bookmarks -c "delete from \"User\" where \"auth0Sub\" like 'demo|%'"` (cascades to their data).
+- Covered by `backend/test/create-app-users.e2e-spec.ts` (verified emails, idempotency, ownership, share rules).
 
 ## 1. Get a second Auth0 identity
 
