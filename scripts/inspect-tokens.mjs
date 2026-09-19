@@ -7,6 +7,7 @@
 //        node scripts/inspect-tokens.mjs --api http://localhost:4000/  (also probe the running API)
 //        node scripts/inspect-tokens.mjs --switch-account               (force the Auth0 login screen,
 //                                                                        to sign in as a different user)
+//        node scripts/inspect-tokens.mjs --connection google-oauth2     (go straight to Google login)
 import { createServer } from 'node:http';
 import { randomBytes, createHash, createPublicKey, verify } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -22,6 +23,8 @@ const API_URL = apiFlag !== -1 ? process.argv[apiFlag + 1] : undefined;
 // `prompt=login` makes Auth0 ask for credentials even when a session cookie exists, which is how you
 // sign in as a second user without clearing cookies.
 const SWITCH_ACCOUNT = process.argv.includes('--switch-account');
+const connectionFlag = process.argv.indexOf('--connection');
+const CONNECTION = connectionFlag !== -1 ? process.argv[connectionFlag + 1] : undefined;
 
 const b64url = (buf) => buf.toString('base64url');
 const section = (title) => console.log(`\n=== ${title} ===`);
@@ -89,6 +92,7 @@ async function main() {
     state,
     nonce,
     ...(SWITCH_ACCOUNT ? { prompt: 'login' } : {}),
+    ...(CONNECTION ? { connection: CONNECTION } : {}),
   }).toString();
 
   const code = await new Promise((resolve, reject) => {

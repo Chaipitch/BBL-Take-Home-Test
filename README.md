@@ -63,10 +63,10 @@ npm run build
 
 ### Users
 There is no "create user" endpoint or screen: identity comes from Auth0 and a `User` row is created on
-the first authenticated request (ADR-007, ADR-011). Two tools add users (`docs/SECOND_REAL_USER.md`):
-`scripts/create-auth0-user.mjs` creates real Auth0 accounts that can log in (you type the password),
-and `backend/scripts/create-app-users.ts` creates any number of local app users with verified emails
-for data and sharing tests (they cannot log in).
+the first authenticated request (ADR-007, ADR-011). Adding users (`docs/SECOND_REAL_USER.md`): the tenant blocks password sign-up but **allows Google
+login**, so any Google account you sign in with becomes a user with a verified email;
+`backend/scripts/create-app-users.ts` creates any number of local app users (verified emails, optional
+data and shares) for tests — they cannot log in.
 
 ### Seed data
 `npx prisma db seed` (ADR-016):

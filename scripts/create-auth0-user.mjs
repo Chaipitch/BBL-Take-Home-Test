@@ -1,6 +1,11 @@
 #!/usr/bin/env node
-// Creates real Auth0 accounts through the tenant's public sign-up endpoint, so you can log into the
-// UI as several different people. You type the password; this script never stores, logs or echoes it.
+// Creates real Auth0 accounts through the tenant's public sign-up endpoint.
+//
+// NOTE: on this tenant (dev-yg) public sign-up is DISABLED — it answers "public signup is disabled".
+// Use Google login instead (see docs/SECOND_REAL_USER.md): any Google account signing in becomes a
+// new user with a verified email. This script stays for tenants where sign-up is allowed.
+//
+// You type the password; this script never stores, logs or echoes it.
 //
 //   node scripts/create-auth0-user.mjs --email you+test1@gmail.com
 //   node scripts/create-auth0-user.mjs --email "you+test{n}@gmail.com" --count 3 --name "Tester {n}"
@@ -73,7 +78,7 @@ async function signUp(email, name, password) {
   // Auth0 hides "already registered" behind invalid_signup on purpose.
   const reason =
     body.code === 'invalid_signup' ? 'invalid signup (the address may already be registered)' : body.description ?? body.error ?? `HTTP ${response.status}`
-  return { ok: false, reason }
+  return { ok: false, reason, disabled: /signup is disabled/i.test(String(body.error ?? body.description ?? '')) }
 }
 
 const password = await readPassword()
@@ -83,6 +88,7 @@ if (!password) {
 }
 
 let created = 0
+let signupDisabled = false
 for (let n = 1; n <= count; n++) {
   const email = fill(emailTemplate, n)
   const result = await signUp(email, fill(nameTemplate, n), password)
@@ -90,11 +96,21 @@ for (let n = 1; n <= count; n++) {
     created++
     console.log(`created  ${email}  (auth0 id ${result.id}, email_verified: ${result.emailVerified})`)
   } else {
+    signupDisabled ||= result.disabled === true
     console.log(`failed   ${email}  — ${result.reason}`)
   }
 }
 
 console.log(`\n${created}/${count} account(s) created.`)
+if (signupDisabled) {
+  console.log('\nThis tenant does not allow public sign-up. Ways to get more real logins:')
+  console.log('  • Google login — any Google account can sign in and becomes a user with a verified email:')
+  console.log('      node scripts/inspect-tokens.mjs --switch-account --connection google-oauth2')
+  console.log('    or just pick "Continue with Google" on the login screen.')
+  console.log('  • Ask BBL for additional test accounts (the brief invites questions).')
+  console.log('  • For data and sharing tests you do not need logins at all:')
+  console.log('      cd backend && npx tsx scripts/create-app-users.ts --count 5 --with-data')
+}
 if (created > 0) {
   console.log('Next: open the inbox for each address and click Auth0\'s verification link — an unverified')
   console.log('email cannot receive shares (ADR-006b). Then sign in: the app creates the user on first request.')
