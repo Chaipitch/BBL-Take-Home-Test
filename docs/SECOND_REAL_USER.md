@@ -42,29 +42,28 @@ npx tsx scripts/create-app-users.ts --count 2 --prefix demo --with-data \
   `docker exec bbl-bookmarks-postgres psql -U bookmarks -d bookmarks -c "delete from \"User\" where \"auth0Sub\" like 'demo|%'"` (cascades to their data).
 - Covered by `backend/test/create-app-users.e2e-spec.ts` (verified emails, idempotency, ownership, share rules).
 
-## 1. Get a second Auth0 identity
+## Where real accounts come from
 
-The brief provides one account (`candidate@test.com`). To sign in as somebody else, in order of preference:
+The brief provides one account (`candidate@test.com`). The tenant's **public sign-up endpoint is
+enabled** (verified: a request without a password answers "Missing required property: password", and
+the `Username-Password-Authentication` connection exists), which is what `create-auth0-user.mjs` uses.
+Alternatives, if you would rather not add accounts to someone else's tenant: use a social login if the
+screen offers one (its email arrives already verified), or ask BBL for more test accounts — the brief
+invites questions.
 
-| Option | How | Notes |
-|---|---|---|
-| **Sign-up on the login page** | Open the app, and on the Auth0 screen look for **Sign up** / "Create an account" | Only works if the tenant's database connection allows sign-ups. An automated check was inconclusive (the page is JavaScript-rendered and `/u/signup` answers `400`), so look at the screen. |
-| **Social login** | If the login screen offers Google/GitHub, use a second account you own | The email arrives already verified, which matters for sharing. |
-| **Ask BBL for a second test account** | The brief invites questions when genuinely blocked | Cleanest: no extra accounts created in someone else's tenant. |
-| **Neither is available** | Keep the current approach | Cross-user behaviour is already proved by the automated suites (locally signed tokens for two users) and by the seeded users; say so in the README rather than pretending otherwise. |
-
-> The agent will not create the account or type a password — that is yours to do.
+> The agent will not create accounts or type passwords; that stays with you.
 
 **Email verification matters.** A share recipient must have a **verified** email (ADR-006b). A freshly
 signed-up user has `email_verified: false` until they click the link Auth0 emails them, and until then
-sharing to that address answers `404 recipient_not_found` — which is correct behaviour, not a bug.
+sharing to that address answers `404 recipient_not_found` — correct behaviour, not a bug. Local app
+users (`create-app-users.ts`) are created verified, so they work as recipients immediately.
 
-## 2. Sign in as the second user
+## Signing in as a different user
 
 - **In the browser:** log out (the app's **Log out** button clears the Auth0 session too), then log in as the other account. To have both users side by side, use a normal window for one and a private window for the other.
 - **For token-level checks:** `node scripts/inspect-tokens.mjs --switch-account` forces the Auth0 login screen even if a session exists, and prints who you signed in as (`sub`, `email`, `email_verified`).
 
-## 3. What to verify with two real users
+## What to verify with two real users
 
 Run the API and frontend (README), then:
 
@@ -75,8 +74,9 @@ Run the API and frontend (README), then:
 - [ ] **Unverified recipient.** If user 2 has not verified their email yet, sharing to them returns "No account with a verified email matches this address" — expected (ADR-006b/c).
 - [ ] **Their data stays theirs.** Create a collection as user 2, then sign back in as user 1 and confirm it is invisible.
 
-## 4. Afterwards
+## Afterwards
 
-Nothing to clean up in the app: users are created by signing in, and the seed never deletes them. If
-you created an account in the tenant, remember it exists — the repo's seed and tests do not know
-about it, and `npx prisma db seed` will not touch it.
+- **Auth0 accounts** you create stay in the tenant; the repo's seed and tests never touch them.
+- **Local app users** can be deleted by prefix (see above); deleting a user cascades to their collections,
+  bookmarks and shares.
+- `npx prisma db seed` leaves both kinds alone, except for its own `seed|…` users.
