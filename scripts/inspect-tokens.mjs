@@ -5,6 +5,8 @@
 //
 // Usage: node scripts/inspect-tokens.mjs                              (port 3000 must be free)
 //        node scripts/inspect-tokens.mjs --api http://localhost:4000/  (also probe the running API)
+//        node scripts/inspect-tokens.mjs --switch-account               (force the Auth0 login screen,
+//                                                                        to sign in as a different user)
 import { createServer } from 'node:http';
 import { randomBytes, createHash, createPublicKey, verify } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -17,6 +19,9 @@ const AUDIENCE = 'https://bbl-candidate-test-api';
 const TIMEOUT_MS = 5 * 60 * 1000;
 const apiFlag = process.argv.indexOf('--api');
 const API_URL = apiFlag !== -1 ? process.argv[apiFlag + 1] : undefined;
+// `prompt=login` makes Auth0 ask for credentials even when a session cookie exists, which is how you
+// sign in as a second user without clearing cookies.
+const SWITCH_ACCOUNT = process.argv.includes('--switch-account');
 
 const b64url = (buf) => buf.toString('base64url');
 const section = (title) => console.log(`\n=== ${title} ===`);
@@ -83,6 +88,7 @@ async function main() {
     code_challenge_method: 'S256',
     state,
     nonce,
+    ...(SWITCH_ACCOUNT ? { prompt: 'login' } : {}),
   }).toString();
 
   const code = await new Promise((resolve, reject) => {
@@ -117,6 +123,10 @@ async function main() {
     console.log(tokenRes.status, tokens.error, tokens.error_description);
     process.exit(1);
   }
+
+  section('Signed in as');
+  const idClaimsEarly = decodeJwt(tokens.id_token ?? '').payload;
+  console.log({ sub: idClaimsEarly?.sub, email: idClaimsEarly?.email, email_verified: idClaimsEarly?.email_verified });
 
   section('Token response (values hidden)');
   console.log({

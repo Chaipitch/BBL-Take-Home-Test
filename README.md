@@ -15,6 +15,7 @@ Private read-later app: NestJS + Prisma + PostgreSQL API, React + Vite + MUI fro
 | `/transcripts/` | The real session log, redacted, plus a readable Markdown version |
 | `CLAUDE.md` | Rules a fresh agent session needs to produce on-spec code here |
 | `docs/API_MANUAL_TESTING.md`, `docs/FRONTEND_MANUAL_TESTING.md` | Manual checks with a real Auth0 login (Postman collection, browser checklist) |
+| `docs/SECOND_REAL_USER.md` | How to test with a second real Auth0 login (the app has no user-management screen: users appear on first sign-in) |
 
 ## Verification at a glance
 
@@ -59,6 +60,11 @@ npm run build
 - e2e tests run the real `AppModule` (guard, validation, services, Prisma, Postgres) with two or more users. Only the Auth0 signing keys (local test JWKS) and `/userinfo` are faked. See `API_DESIGN.md` §7 for which test proves which privacy rule.
 - Real Auth0 tokens were checked separately against the running API (`scripts/inspect-tokens.mjs`, results in `docs/auth0/TENANT_FINDINGS.md`).
 - Manual end-to-end testing with a real login: `docs/API_MANUAL_TESTING.md` (Postman collection in `docs/postman/`).
+
+### Users
+There is no "create user" endpoint or screen: identity comes from Auth0 and a `User` row is created on
+the first authenticated request (ADR-007, ADR-011). Testing with a second real account:
+`docs/SECOND_REAL_USER.md`. The seeded users are database-only and cannot log in.
 
 ### Seed data
 `npx prisma db seed` (ADR-016):

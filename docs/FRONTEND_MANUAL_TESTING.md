@@ -57,6 +57,11 @@ Open **http://localhost:3000** in a normal browser window with DevTools → **Ne
   **Recorded 2026-09-17 (developer): stayed signed in; silent renewal works on this tenant.**
 - [ ] **Log out** → Auth0 logout → back at `http://localhost:3000` → immediately asked to log in again.
 
+### E2. Two real users (optional, needs a second Auth0 account)
+See `docs/SECOND_REAL_USER.md` — how to get one, and the checks worth running (provisioning, isolation,
+sharing both ways, revoke, unverified recipient). `node scripts/inspect-tokens.mjs --switch-account`
+forces the Auth0 login screen so you can sign in as the other account.
+
 ### E. Privacy smoke test through the UI
 - [ ] Open `http://localhost:3000/collections/<bCollectionId>` (from `scripts/manual-test/print-seed-ids.sql`) → "Not found. It may have been deleted, or it is not yours."
 - [ ] `http://localhost:3000/bookmarks/<bBookmarkId>` → same message.
